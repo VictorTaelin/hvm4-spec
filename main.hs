@@ -1,3 +1,58 @@
+-- The Interaction Calculus
+-- ========================
+-- A term rewrite system for the following language:
+-- 
+-- Term ::=
+-- | Var ::= Name
+-- | Dp0 ::= Name "₀"
+-- | Dp1 ::= Name "₁"
+-- | Era ::= "&{}"
+-- | Sup ::= "&" Name "{" Term "," Term "}"
+-- | Dup ::= "!" Name "&" Name "=" Term ";" Term
+-- | Lam ::= "λ" Name "." Term
+-- | App ::= "(" Term " " Term ")"
+--
+-- Where:
+-- - Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $
+-- 
+-- In it, variables are affine (they must occur at most once), and range
+-- globally (they can occur "outside" of their binder's "body"). Example:
+-- 
+--   (Af. !F0 &A = f; !F1 &A = λx0. (F0₀ (F0₁ x0)); λx1.(F1₀ (F1₁ x1)))
+-- 
+-- Is a valid term, representing 'λf.λx.(f (f x))'.
+-- 
+-- Terms are rewritten via the following interaction rules:
+-- 
+-- (λx.f a)
+-- -------- app-lam
+-- x ← a
+-- f
+-- 
+-- (&L{f,g} a)
+-- ----------------- app-sup
+-- ! A &L = a
+-- &L{(f A₀),(g A₁)}
+-- 
+-- ! F &L = λx.f
+-- ------------- dup-lam
+-- F₀ ← λ$x0.G₀
+-- F₁ ← λ$x1.G₁
+-- x  ← &L{$x0,$x1}
+-- ! G &L = f
+-- 
+-- ! X &L = &R{a,b}
+-- ---------------- dup-sup
+-- if L == R:
+--   X₀ ← a
+--   X₁ ← b
+-- else:
+--   ! A &L = a
+--   ! B &L = b
+--   X₀ ← &R{A₀,B₀}
+--   X₁ ← &R{A₁,B₁}
+
+
 {-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -O2 #-}
 
@@ -208,21 +263,11 @@ dup e k l (Lam vk vf)    t = dup_lam e k l vk vf t
 dup e k l (Sup vl va vb) t = dup_sup e k l vl va vb t
 dup e k l v              t = return $ Dup k l v t
 
--- (λx.f a)
--- -------- app-lam
--- x ← a
--- f
-
 app_lam :: Env -> Name -> Term -> Term -> IO Term
 app_lam e fx ff v = do
   inc_inters e
   subst_var e fx v
   wnf e ff
-
--- (&L{f,g} a)
--- ----------------- app-sup
--- ! A &L = a
--- &L{(f A₀),(g A₁)}
 
 app_sup :: Env -> Lab -> Term -> Term -> Term -> IO Term
 app_sup e fL fa fb v = do
@@ -230,14 +275,6 @@ app_sup e fL fa fb v = do
   x <- fresh e
   delay_dup e x fL v
   wnf e (Sup fL (App fa (Dp0 x)) (App fb (Dp1 x)))
-
-
--- ! F &L = λx.f
--- ---------------- dup-lam
--- F₀ ← λ$x0.G₀
--- F₁ ← λ$x1.G₁
--- x  ← &L{$x0,$x1}
--- ! G &L = f
 
 dup_lam :: Env -> Name -> Lab -> Name -> Term -> Term -> IO Term
 dup_lam e k l vk vf t = do
@@ -250,17 +287,6 @@ dup_lam e k l vk vf t = do
   subst_var e vk (Sup l (Var x0) (Var x1))
   delay_dup e g l vf
   wnf e t
-
--- ! X &L = &R{a,b}
--- ---------------- dup-sup
--- if L == R:
---   X₀ ← a
---   X₁ ← b
--- else:
---   ! A &L = a
---   ! B &L = b
---   X₀ ← &R{A₀,B₀}
---   X₁ ← &R{A₁,B₁}
 
 dup_sup :: Env -> Name -> Lab -> Lab -> Term -> Term -> Term -> IO Term
 dup_sup e k l vl va vb t
