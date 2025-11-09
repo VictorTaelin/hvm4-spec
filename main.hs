@@ -12,39 +12,33 @@
 -- | Dup ::= "!" Name "&" Name "=" Term ";" Term
 -- | Lam ::= "λ" Name "." Term
 -- | App ::= "(" Term " " Term ")"
--- | Tup ::= "#" "(" Term "," Term ")"
--- | Bt0 ::= "#F"
--- | Bt1 ::= "#T"
+-- | Bt0 ::= "#0"
+-- | Bt1 ::= "#1"
 -- | Zer ::= "0"
 -- | Suc ::= "1+"
 -- | Nil ::= "[]"
 -- | Con ::= Term "<>" Term
 --
 -- Where:
--- - Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $
+-- 
+-- Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $
 -- 
 -- In it, variables are affine (they must occur at most once), and range
--- globally (they can occur "outside" of their binder's "body"). Example:
--- 
---   (Af. !F0 &A = f; !F1 &A = λx0. (F0₀ (F0₁ x0)); λx1.(F1₀ (F1₁ x1)))
--- 
--- Is a valid term, representing 'λf.λx.(f (f x))'.
+-- globally (they can occur "outside" of their binder's "body").
 -- 
 -- Functions can be defined as:
 -- 
--- Func ::= "@" Name "=" Case
+-- Func ::= "@" Name "=" CaseTree
 -- 
--- Where a Case-Tree can be defined as:
+-- Where a CaseTree can be defined as:
 -- 
--- Case ::=
--- | Abs  ::= "λ" Name "." Case
--- | TupM ::= "λ" "{" "#(,)" ":" Case ";"? "}"
--- | BitM ::= "λ" "{" "#F" ":" Case ";"? "#T" ":" Case ";"? "}"
--- | NatM ::= "λ" "{" "0" ":" Case ";"? "1+" ":" Case ";"? "}"
--- | LstM ::= "λ" "{" "[]" ":" Case ";"? "<>" ":" Case ";"? "}"
--- | Body ::= Term
--- 
--- (Not implemented yet. Will be futurely.)
+-- CaseTree ::=
+-- | CLam ::= "Λ" Name "." Case
+-- | CTup ::= "Λ" "{" "#(,)" ":" Case ";"? "}"
+-- | CBit ::= "Λ" "{" "#0" ":" Case ";"? "#1" ":" Case ";"? "}"
+-- | CNat ::= "Λ" "{" "0" ":" Case ";"? "1+" ":" Case ";"? "}"
+-- | CLst ::= "Λ" "{" "[]" ":" Case ";"? "<>" ":" Case ";"? "}"
+-- | CRet ::= Term
 -- 
 -- Terms are rewritten via the following interaction rules:
 -- 
@@ -75,6 +69,89 @@
 --   ! B &L = b
 --   X₀ ← &R{A₀,B₀}
 --   X₁ ← &R{A₁,B₁}
+-- 
+-- References are applied using the match interactions:
+-- 
+-- match Λx.f (a):S
+-- ---------------- match-any
+-- x ← a
+-- match f S
+-- 
+-- match Λ{#(,):t} ((x,y):S)
+-- ------------------------- match-sig-tup
+-- match t (x:y:S)
+-- 
+-- match Λ{#0:f;#1:t} (#0:S)
+-- ------------------------- match-bit-bt0
+-- match f S
+-- 
+-- match Λ{#0:f;#1:t} (#0:S)
+-- ------------------------- match-bit-bt1
+-- match t S
+-- 
+-- match Λ{0:z;1+:s} (0:S)
+-- ----------------------- match-nat-zer
+-- match z S
+-- 
+-- match Λ{0:z;1+:s} (1+n:S)
+-- ------------------------- match-nat-suc
+-- match n (n:S)
+-- 
+-- match Λ{[]:n;<>:c} ([]:S)
+-- ------------------------- match-lst-nil
+-- match n S
+-- 
+-- match Λ{[]:n;<>:c} (x<>xs:S)
+-- ---------------------------- match-lst-con
+-- match c (x:xs:S)
+-- 
+-- match Λ{#(,):t} (&L{a,b}:S)
+-- ------------------------------ match-bit-tup
+-- ! &L S = S
+-- ! &L T = t
+-- &L{(match Λ{#(,):T₀} a:S₀)
+--    (match Λ{#(,):T₁} b:S₁)}
+-- 
+-- match Λ{#0:f;#1:t} (&L{a,b}:S)
+-- ------------------------------ match-bit-sup
+-- ! &L S = S
+-- ! &L F = f
+-- ! &L T = t
+-- &L{(match Λ{#0:F₀;#1:T₀} a:S₀)
+--    (match Λ{#0:F₁;#1:T₁} b:S₁)}
+-- 
+-- match Λ{0:z;1+:s} (&L{a,b}:S)
+-- ------------------------------ match-nat-sup
+-- ! &L S = S
+-- ! &L Z = z
+-- ! &L N = s
+-- &L{(match Λ{0:Z₀;1+:N₀} a:S₀)
+--    (match Λ{0:Z₁;1+:N₁} b:S₁)}
+-- 
+-- match Λ{[]:n;<>:c} (&L{a,b}:S)
+-- ------------------------------ match-lst-sup
+-- ! &L S = S
+-- ! &L N = n
+-- ! &L C = c
+-- &L{(match Λ{[]:N₀;<>:C₀} a:S₀)
+--    (match Λ{[]:N₁;<>:C₁} b:S₁)}
+
+-- match t S
+-- --------------- match-end
+-- wnf S (alloc t)
+-- 
+-- Finally, the alloc operation converts a Func to a Term:
+-- 
+-- alloc Λx.f
+-- ----------- alloc-lam
+-- x ← fresh
+-- λx. alloc f
+-- 
+-- alloc (f x)
+-- --------------------- alloc-app
+-- ((alloc f) (alloc x))
+-- 
+-- ... etc ...
 
 
 {-# LANGUAGE BangPatterns #-}
@@ -278,25 +355,25 @@ take_dup e = taker (dup_map e)
 
 -- Main WNF loop: drives reduction by analyzing the term structure.
 wnf :: Env -> Stack -> Term -> IO Term
-wnf e s (App f x)     = wnf e (FApp x : s) f
+wnf e s (App f x)     = wnf e (FApp x : s) f
 wnf e s (Dup k l v t) = delay_dup e k l v >> wnf e s t
-wnf e s (Var k)       = var e s k
-wnf e s (Dp0 k)       = wnf_dup e s k FDp0 dp0
-wnf e s (Dp1 k)       = wnf_dup e s k FDp1 dp1
-wnf e s f             = unwind e s f -- Reached a head form (Lam, Sup, Era).
+wnf e s (Var k)       = var e s k
+wnf e s (Dp0 k)       = wnf_dup e s k FDp0 dp0
+wnf e s (Dp1 k)       = wnf_dup e s k FDp1 dp1
+wnf e s f             = unwind e s f -- Reached a head form (Lam, Sup, Era).
 
 -- Auxiliary function for handling Dp0/Dp1 in wnf: checks for delayed dup
 wnf_dup :: Env -> Stack -> Name -> (Name -> Lab -> Frame) -> (Env -> Stack -> Name -> IO Term) -> IO Term
 wnf_dup e s k mkFrame fallback = do
-  mlv <- take_dup e k
-  case mlv of
-    Just (l, v) -> wnf e (mkFrame k l : s) v
-    Nothing     -> fallback e s k
+  mlv <- take_dup e k
+  case mlv of
+    Just (l, v) -> wnf e (mkFrame k l : s) v
+    Nothing     -> fallback e s k
 
 -- Unwind loop: applies the reduced term (head form) to the stack frames (context).
 unwind :: Env -> Stack -> Term -> IO Term
-unwind e []             v = return v
-unwind e (FApp x   : s) v = app e s v x
+unwind e []             v = return v
+unwind e (FApp x   : s) v = app e s v x
 unwind e (FDp0 k l : s) v = dup e s k l v (Dp0 k)
 unwind e (FDp1 k l : s) v = dup e s k l v (Dp1 k)
 
@@ -305,10 +382,10 @@ unwind e (FDp1 k l : s) v = dup e s k l v (Dp1 k)
 
 get_subst :: Env -> Stack -> Name -> (Env -> Name -> IO (Maybe Term)) -> (Name -> Term) -> IO Term
 get_subst e s k takeFunc mkTerm = do
-  mt <- takeFunc e k
-  case mt of
-    Just t  -> wnf e s t
-    Nothing -> unwind e s (mkTerm k)
+  mt <- takeFunc e k
+  case mt of
+    Just t  -> wnf e s t
+    Nothing -> unwind e s (mkTerm k)
 
 -- Var: Check for substitution in var_map.
 var :: Env -> Stack -> Name -> IO Term
@@ -327,15 +404,15 @@ dp1 e s k = get_subst e s k take_dp1 Dp1
 
 -- App: Handles application interactions.
 app :: Env -> Stack -> Term -> Term -> IO Term
-app e s (Lam fk ff)    x = app_lam e s fk ff x
+app e s (Lam fk ff)    x = app_lam e s fk ff x
 app e s (Sup fl fa fb) x = app_sup e s fl fa fb x
-app e s f              x = unwind e s (App f x)
+app e s f              x = unwind e s (App f x)
 
 -- Dup: Handles duplication interactions. 'v' is the reduced value, 't' is the continuation.
 dup :: Env -> Stack -> Name -> Lab -> Term -> Term -> IO Term
-dup e s k l (Lam vk vf)    t = dup_lam e s k l vk vf t
+dup e s k l (Lam vk vf)    t = dup_lam e s k l vk vf t
 dup e s k l (Sup vl va vb) t = dup_sup e s k l vl va vb t
-dup e s k l v              t = unwind e s (Dup k l v t)
+dup e s k l v              t = unwind e s (Dup k l v t)
 
 -- Interaction Rules
 -- -----------------
@@ -362,13 +439,13 @@ dup_lam e s k l vk vf t = do
   x0 <- fresh e
   x1 <- fresh e
   g  <- fresh e
-  -- Populate substitution maps.
+  -- Populate substitution maps.
   subst_dp0 e k (Lam x0 (Dp0 g))
   subst_dp1 e k (Lam x1 (Dp1 g))
   subst_var e vk (Sup l (Var x0) (Var x1))
   delay_dup e g l vf
   -- Continue evaluation of the current side 't' (Dp0 k or Dp1 k).
-  -- This will recursively call wnf, which will now find the substitution via dp0/dp1.
+  -- This will recursively call wnf, which will now find the substitution via dp0/dp1.
   wnf e s t
 
 -- ! X &L = &R{a,b}
@@ -376,7 +453,7 @@ dup_sup :: Env -> Stack -> Name -> Lab -> Lab -> Term -> Term -> Term -> IO Term
 dup_sup e s k l vl va vb t
   | l == vl = do
       inc_inters e
-      -- Populate substitution maps.
+      -- Populate substitution maps.
       subst_dp0 e k va
       subst_dp1 e k vb
       wnf e s t
@@ -384,7 +461,7 @@ dup_sup e s k l vl va vb t
       inc_inters e
       a <- fresh e
       b <- fresh e
-      -- Populate substitution maps.
+      -- Populate substitution maps.
       subst_dp0 e k (Sup vl (Dp0 a) (Dp0 b))
       subst_dp1 e k (Sup vl (Dp1 a) (Dp1 b))
       delay_dup e a l va
@@ -481,3 +558,11 @@ main = do
   print interactions
   printf "Time: %.3f seconds\n" (diff :: Double)
   printf "Rate: %.2f M interactions/s\n" (rate / 1000000 :: Double)
+
+
+
+-- PROBLEM: the file above is incomplete w.r.t spec, since it doesn't implement
+-- Func's, match and alloc. Also, the spec itself is incomplete, and may have some
+-- typos since it was not reviewed. Your goal is to complete the spec, and then
+-- complete the file itself. Write below the COMPLETE Haskell file including all
+-- spec'd functionalities.
