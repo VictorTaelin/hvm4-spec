@@ -560,9 +560,9 @@ wnf_dup e s k mkFrame fallback = do
 -- wnf_unwind loop: applies the reduced term (head form) to the stack frames (context).
 wnf_unwind :: Env -> Stack -> Term -> IO Term
 wnf_unwind e []             v = return v
-wnf_unwind e (FApp x   : s) v = wnf_app e s v x
-wnf_unwind e (FDp0 k l : s) v = wnf_dup_interact e s k l v (Dp0 k)
-wnf_unwind e (FDp1 k l : s) v = wnf_dup_interact e s k l v (Dp1 k)
+wnf_unwind e (FApp x   : s) v = wnf_app_x e s v x
+wnf_unwind e (FDp0 k l : s) v = wnf_dup_x e s k l v (Dp0 k)
+wnf_unwind e (FDp1 k l : s) v = wnf_dup_x e s k l v (Dp1 k)
 
 -- Variable and Port Handlers (Substitution)
 -- -----------------------------------------
@@ -590,16 +590,16 @@ wnf_dp1 e s k = wnf_get_subst e s k take_dp1 Dp1
 -- -----------------------
 
 -- App: Handles application interactions.
-wnf_app :: Env -> Stack -> Term -> Term -> IO Term
-wnf_app e s (Lam fk ff)    x = wnf_app_lam e s fk ff x
-wnf_app e s (Sup fl fa fb) x = wnf_app_sup e s fl fa fb x
-wnf_app e s f              x = wnf_unwind e s (App f x)
+wnf_app_x :: Env -> Stack -> Term -> Term -> IO Term
+wnf_app_x e s (Lam fk ff)    x = wnf_app_lam e s fk ff x
+wnf_app_x e s (Sup fl fa fb) x = wnf_app_sup e s fl fa fb x
+wnf_app_x e s f              x = wnf_unwind e s (App f x)
 
 -- Dup: Handles duplication interactions. 'v' is the reduced value, 't' is the continuation.
-wnf_dup_interact :: Env -> Stack -> Name -> Lab -> Term -> Term -> IO Term
-wnf_dup_interact e s k l (Lam vk vf)    t = wnf_dup_lam e s k l vk vf t
-wnf_dup_interact e s k l (Sup vl va vb) t = wnf_dup_sup e s k l vl va vb t
-wnf_dup_interact e s k l v              t = wnf_unwind e s (Dup k l v t)
+wnf_dup_x :: Env -> Stack -> Name -> Lab -> Term -> Term -> IO Term
+wnf_dup_x e s k l (Lam vk vf)    t = wnf_dup_lam e s k l vk vf t
+wnf_dup_x e s k l (Sup vl va vb) t = wnf_dup_sup e s k l vl va vb t
+wnf_dup_x e s k l v              t = wnf_unwind e s (Dup k l v t)
 
 -- Interaction Rules
 -- -----------------
