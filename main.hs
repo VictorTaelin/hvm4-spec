@@ -15,6 +15,7 @@
 -- | App ::= "(" Term " " Term ")"
 -- | Zer ::= "0"
 -- | Suc ::= "1+"
+-- | Swi ::= "Λ" "{" "0" ":" Term ";"? "1" "+" ":" Term ";"? "}" 
 -- | Ref ::= "@" Name
 -- | Cal ::= Term "~>" Term
 --
@@ -161,7 +162,7 @@ instance Show Term where
   show (App f x)     = "(" ++ show f ++ " " ++ show x ++ ")"
   show Zer           = "0"
   show (Suc n)       = "1+" ++ show n
-  show (Swi z s)     = "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
+  show (Swi z s)     = "Λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
   show (Ref k)       = "@" ++ int_to_name k
   show (Cal f g)     = show f ++ "~>" ++ show g
 
@@ -233,7 +234,7 @@ parse_app = between (lexeme (char '(')) (lexeme (char ')')) $ do
 
 parse_lam_or_swi :: ReadP Term
 parse_lam_or_swi = do
-  lexeme (choice [char 'λ', char '\\'])
+  lexeme (choice [char 'λ', char 'Λ'])
   parse_swi_body <++ parse_lam_body
 
 parse_lam_body :: ReadP Term
@@ -613,9 +614,7 @@ wnf_app_cal_swi e s f z sc a = do
     Zer       -> wnf_app_cal_swi_zer e s f z
     Suc n     -> wnf_app_cal_swi_suc e s f sc n
     Sup l b c -> wnf_app_cal_swi_sup e s f z sc l b c
-    -- When stuck on a Nam, the WNF is the spine.
     Nam k     -> wnf_unwind e s (App f (Nam k))
-    -- When stuck on other neutrals, the WNF retains the Cal structure.
     a_wnf     -> wnf_unwind e s (App (Cal f (Swi z sc)) a_wnf)
 
 -- ((f ~> Λ{0:z;1+:s}) 0)
@@ -695,7 +694,6 @@ wnf_alloc e term = go IM.empty term where
 -- Normalization
 -- =============
 
--- FIX 2: Restructure nf to handle Cal normalization semantics correctly (normalize spine).
 nf :: Env -> Int -> Term -> IO Term
 nf e d x = do { !x0 <- wnf e [] x ; go e d x0 } where
   go :: Env -> Int -> Term -> IO Term
@@ -786,11 +784,14 @@ book = """
   @c_not   = λb. λt. λf. (b f t)
 
   @id  = λa.a
-  @not = λ{0:1+0;1+:λp.0}
-  @dbl = λ{0:0;1+:λp.1+1+(@dbl p)}
-  @and = λ{0:λ{0:0;1+:λp.0};1+:λp.λ{0:0;1+:λp.1+0}}
-  @add = λ{0:λb.b;1+:λa.λb.1+(@add a b)}
-  @sum = λ{0:0;1+:λp.!P&S=p;1+(@add P₀ (@sum P₁))}
+  @not = Λ{0:1+0;1+:λp.0}
+  @dbl = Λ{0:0;1+:λp.1+1+(@dbl p)}
+  @and = Λ{0:Λ{0:0;1+:λp.0};1+:λp.Λ{0:0;1+:λp.1+0}}
+  @add = Λ{0:λb.b;1+:λa.λb.1+(@add a b)}
+  @sum = Λ{0:0;1+:λp.!P&S=p;1+(@add P₀ (@sum P₁))}
+
+
+  @foo = λx.Λ{0:x;1+:λp.x}
 """
 
 main :: IO ()
@@ -807,4 +808,168 @@ main :: IO ()
 -- main = run book "λx.(@and 0 x)" -- λa.((^@and 0) ^a)
 -- main = run book "λx.(@and x 0)" -- λa.((^@and ^a) 0)
 -- main = run book "(@sum 1+1+1+0)" -- 1+1+1+1+1+1+0
-main = run book "λx.(@sum 1+1+1+x)"
+-- main = run book "λx.(@sum 1+1+1+x)"
+-- main = run book "(@foo X 1+0)" -- X
+main = run book "(@foo v &L{0,1+0})"
+
+-- running the last main outputs:
+
+-- [1 of 2] Compiling Main             ( main.hs, main.o ) [Source file changed]
+-- [2 of 2] Linking .tmp_hs
+-- >> alloc                : λa.Λ{0:a;1+:λb.a}
+-- >> wnf_enter_cal        : ^@foo~>λa.Λ{0:a;1+:λb.a}
+-- >> wnf_app_cal          : ^@foo~>λa.Λ{0:a;1+:λb.a} v
+-- >> wnf_enter            : λa.Λ{0:a;1+:λb.a}
+-- >> wnf_app_cal_lam      : ^@foo~>λa.Λ{0:a;1+:λb.a} v
+-- >> wnf_enter_cal        : (^@foo a)~>Λ{0:a;1+:λb.a}
+-- >> wnf_app_cal          : (^@foo a)~>Λ{0:a;1+:λb.a} &L{0,1+0}
+-- >> wnf_enter            : Λ{0:a;1+:λb.a}
+-- >> wnf_enter            : &L{0,1+0}
+-- >> wnf_app_cal_swi      : (^@foo a)~>Λ{0:a;1+:λb.a} &L{0,1+0}→&L{0,1+0}
+-- >> wnf_app_cal_swi_sup  : (^@foo a)~>Λ{0:a;1+:λb.a} &L{0,1+0}
+-- >> wnf_enter            : &L{(c₀~>Λ{0:d₀;1+:e₀} 0),(c₁~>Λ{0:d₁;1+:e₁} 1+0)}
+-- >> wnf_enter_cal        : c₀~>Λ{0:d₀;1+:e₀}
+-- >> wnf_app_cal          : c₀~>Λ{0:d₀;1+:e₀} 0
+-- >> wnf_enter            : Λ{0:d₀;1+:e₀}
+-- >> wnf_enter            : 0
+-- >> wnf_app_cal_swi      : c₀~>Λ{0:d₀;1+:e₀} 0→0
+-- >> wnf_app_cal_swi_zer  : c₀~>Λ{0:d₀;1+:...} 0
+-- >> wnf_enter_cal        : (c₀ 0)~>d₀
+-- >> wnf_enter            : ^v
+-- >> wnf_enter_cal        : c₁~>Λ{0:d₁;1+:e₁}
+-- >> wnf_app_cal          : c₁~>Λ{0:d₁;1+:e₁} 1+0
+-- >> wnf_enter            : Λ{0:d₁;1+:e₁}
+-- >> wnf_enter            : 1+0
+-- >> wnf_app_cal_swi      : c₁~>Λ{0:d₁;1+:e₁} 1+0→1+0
+-- >> wnf_app_cal_swi_suc  : c₁~>Λ{0:...;1+:e₁} 1+0
+-- >> wnf_enter_cal        : λf.(c₁ 1+f)~>e₁
+-- >> wnf_app_cal          : λf.(c₁ 1+f)~>e₁ 0
+-- >> wnf_enter            : λb.a
+-- >> wnf_enter            : λh.i₁
+-- >> wnf_app_cal_lam      : λf.(c₁ 1+f)~>λh.i₁ 0
+-- >> wnf_enter_cal        : (λf.(c₁ 1+f) h)~>i₁
+-- >> wnf_enter            : ^a
+-- &L{^v,^a}
+-- - Itrs: 9 interactions
+-- - Time: 0.001 seconds
+-- - Perf: 0.01 M interactions/s
+
+-- this is wrong. seems like we have an unbound ^a there. why? let me think.
+
+-- (@foo v &L{0,1+0})
+-- ----------------------------------------- ref (@foo)
+-- ((@foo ~> λx.Λ{0:x;1+:λp.x}) v &L{0,1+0})
+-- ----------------------------------------- app-cal-lam
+-- x ← v
+-- (((@foo x) ~> Λ{0:x;1+:λp.x}) &L{0,1+0})
+-- ----------------------------------------- app-cal-swi-sup
+-- ! &L F = (@foo x)
+-- ! &L Z = x
+-- ! &L S = λp.x
+-- &L{((F₀ ~> Λ{0:Z₀;1+:S₀}) 0)
+  -- ,((F₁ ~> Λ{0:Z₁;1+:S₁}) 1+0)}
+-- ----------------------------------------- app-cal-swi-zer / app-cal-swi-suc
+-- ! &L F = (@foo x)
+-- ! &L Z = x
+-- ! &L S = λp.x
+-- &L{((F₀ 0) ~> Z₀)
+--   ,(λk.(F₁ 1+k) ~> (S₁ 0))}
+-- ----------------------------------------- dup-lam
+-- ! &L F = (@foo x)
+-- ! &L Z = x
+-- ! &L S = x
+-- &L{((F₀ 0) ~> Z₀)
+--   ,(λk.(F₁ 1+k) ~> (λp1.S₁ 0))}
+-- ----------------------------------------- app-lam
+-- ! &L F = (@foo x)
+-- ! &L Z = x
+-- ! &L S = x
+-- &L{((F₀ 0) ~> Z₀)
+--   ,(λk.(F₁ 1+k) ~> S₁)}
+-- ----------------------------------------- app-cal-done (2x)
+-- ! &L F = (@foo x)
+-- ! &L Z = x
+-- ! &L S = x
+-- &L{Z₀,S₁}
+-- ----------------------------------------- var (x ← v)
+-- ! &L F = (@foo x)
+-- ! &L Z = v
+-- ! &L S = x
+-- &L{Z₀,S₁}
+-- ----------------------------------------- dup-nam
+-- ! &L S = x
+-- &L{v,S₁}
+-- ----------------------------------------- oops... (x unbound)
+
+-- ok, I see it now. the problem is that, if `x` occurs on both branches, and if
+-- the λ-match is superposed due to an app-call-swi-sup operation, then, we'll have
+-- each case of the λ-match accessing the same x:
+-- ! &L Z = x
+-- ! &L S = λp.x
+-- then, if the left side of the superposition selects Z, and the right side of
+-- the superposition selects S, we'll consume the same x, which is incorrect in
+-- an affine language, resulting in an unbound reference.
+-- 
+-- I propose the following solution for this issue.
+
+-- (@foo v &L{0,1+0})
+-- ----------------------------------------------- ref (@foo)
+-- ((@foo ~> ΛΛ{0:%0;1+:λp.%0} % []) v &L{0,1+0})
+-- ----------------------------------------------- app-cal-lam
+-- (((@foo %0) ~> Λ{0:%0;1+:λp.%0} % [v]) &L{0,1+0})
+-- ----------------------------------------------- app-cal-swi-sup (this dups the sbustitution list)
+-- ! &L F = (@foo %0)
+-- ! &L V = v
+-- ! &L Z = %0
+-- ! &L S = λp.%0
+-- &L{((F₀ ~> Λ{0:Z₀;1+:S₀} % [V₀]) 0)
+  -- ,((F₁ ~> Λ{0:Z₁;1+:S₁} % [V₁]) 1+0)}
+-- ----------------------------------------- app-cal-swi-zer / app-cal-swi-suc
+-- ! &L F = (@foo %0)
+-- ! &L V = v
+-- ! &L Z = %0
+-- ! &L S = λp.%0
+-- &L{((F₀ 0) ~> Z₀ % [V₀])
+--   ,(λk.(F₁ 1+k) ~> (S₁ 0) % [V₁])}
+-- ----------------------------------------- dup-lam
+-- ! &L F = (@foo %0)
+-- ! &L V = v
+-- ! &L Z = %0
+-- ! &L S = %0
+-- &L{((F₀ 0) ~> Z₀)
+--   ,(λk.(F₁ 1+k) ~> (λp1.S₁ 0))}
+-- ----------------------------------------- app-lam
+-- ! &L F = (@foo %0)
+-- ! &L V = v
+-- ! &L Z = %0
+-- ! &L S = %0
+-- &L{((F₀ 0) ~> Z₀ % [V₀])
+--   ,(λk.(F₁ 1+k) ~> S₁ % [V₁])}
+-- ----------------------------------------- app-cal-alloc (2x)
+-- ! &L F = (@foo %0)
+-- ! &L V = v
+-- &L{V₀,V₁}
+-- ----------------------------------------- dup-nam
+-- &L{v,v}
+-- 
+-- In other words, we must:
+-- - include two new variants:
+--   | Bru ::= "%" Numb -- represents a Book Variable (Bruijn Level)
+--   | Abs ::= "Λ" Term -- represents a Book Lambda
+-- - extend the Cal variant to:
+--   | Cal ::= Term "~>" Term "%" "[" [Term] "]"
+--   where the last field is a list of substitutions: `[a,b,...]`
+-- - refactor Book terms to store variables by Bruijn Level, not by name
+-- - so, for example, 'λx.λy.λz.(x y z)' is parsed as `ΛΛΛ(%0 %1 %2)`
+-- - include a dup_list function, to dup the substitution list when needed
+-- - include an wnf_alloc function, which will complete an wnf-cal reduction,
+--   converting book lambdas into runtime lambdas (extending the substitution list
+--   with fresh variables), and getting a var's term from the substitution list
+-- - adjust the dup-cal function to ensure it is correct under this new spec
+-- - adjust any other part of the code that needs updates to ensure correctness
+-- 
+-- now, reason about the code to implement this change. once it is done, the
+-- @main above should work as expected, correctly outputting &L{v,v}. keep your
+-- edits minimal and focused (don't change anything that isn't related to this
+-- request). don't remove comments. write below a complete copy of the file
+-- above, with this patch applied correctly.
