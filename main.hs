@@ -38,6 +38,11 @@
 -- ! A &L = a
 -- &L{(f A₀),(g A₁)}
 -- 
+-- ! X &L = &{}
+-- ------------ dup-era
+-- X₀ ← &{}
+-- X₁ ← &{}
+
 -- ! F &L = λx.f
 -- ---------------- dup-lam
 -- F₀ ← λ$x0.G₀
@@ -461,6 +466,7 @@ wnf_unwind e (x:s) v = do
       Cal f g      -> wnf_app_cal e s f g x
       f            -> wnf_unwind e s (App f x)
     FDp0 k l -> case v of
+      Era          -> wnf_dpn_era e s k l          (Dp0 k)
       Lam vk vf    -> wnf_dpn_lam e s k l vk vf    (Dp0 k)
       Sup vl va vb -> wnf_dpn_sup e s k l vl va vb (Dp0 k)
       Cal vf vg    -> wnf_dpn_cal e s k l vf vg    (Dp0 k)
@@ -470,6 +476,7 @@ wnf_unwind e (x:s) v = do
       Nam n        -> wnf_dpn_nam e s k l n        (Dp0 k)
       val          -> wnf_unwind  e s (Dup k l val (Dp0 k))
     FDp1 k l -> case v of
+      Era          -> wnf_dpn_era e s k l          (Dp1 k)
       Lam vk vf    -> wnf_dpn_lam e s k l vk vf    (Dp1 k)
       Sup vl va vb -> wnf_dpn_sup e s k l vl va vb (Dp1 k)
       Cal vf vg    -> wnf_dpn_cal e s k l vf vg    (Dp1 k)
@@ -507,6 +514,15 @@ wnf_app_sup e s fL fa fb v = do
   x <- fresh e
   regis_dup e x fL v
   wnf e s (Sup fL (App fa (Dp0 x)) (App fb (Dp1 x)))
+
+-- ! X &L = &{}
+wnf_dpn_era :: Env -> Stack -> Name -> Lab -> Term -> IO Term
+wnf_dpn_era e s k _ t = do
+  when debug $ putStrLn $ "## wnf_dpn_era          : " ++ show (Dup k (name_to_int "_") Era t)
+  inc_inters e
+  subst e SubDp0 k Era
+  subst e SubDp1 k Era
+  wnf e s t
 
 -- ! F &L = λx.f
 wnf_dpn_lam :: Env -> Stack -> Name -> Lab -> Name -> Term -> Term -> IO Term
@@ -806,4 +822,5 @@ main :: IO ()
 -- main = run book "λx.(@and x 0)" -- λa.((^@and ^a) 0)
 -- main = run book "(@sum 1+1+1+0)" -- 1+1+1+1+1+1+0
 -- main = run book "λx.(@sum 1+1+1+x)"
-main = run book "(@foo 0)"
+-- main = run book "(@foo 0)"
+main = run book "(@foo 1+1+1+0)"
