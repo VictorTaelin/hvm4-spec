@@ -95,17 +95,17 @@
 -- ((f ~> Λ{0:z;1+:s} % m) &L{a,b})
 -- -------------------------------- app-cal-swi-sup
 -- ! &L F = f
--- (M₀, M₁) = dup_substs(m)
--- (Z₀, Z₁) = alloc_dup(z)
--- (S₀, S₁) = alloc_dup(s)
+-- ! &L M = m
+-- ! &L Z = z
+-- ! &L S = s
 -- &L{((F₀ ~> Λ{0:Z₀;1+:S₀} % M₀) a)
 --   ,((F₁ ~> Λ{0:Z₁;1+:S₁} % M₁) b)}
 -- 
 -- ! &L X = f ~> g % m
 -- ------------------- dup-cal
 -- ! &L F = f
--- (M₀, M₁) = dup_substs(m)
--- (G₀, G₁) = alloc_dup(g)
+-- ! &L M = m
+-- ! &L G = g
 -- X₀ ← F₀ ~> G₀ % M₀
 -- X₁ ← F₁ ~> G₁ % M₁
 
@@ -144,7 +144,6 @@ data Term
   | Suc !Term
   | Swi !Term !Term
   | Ref !Name
-  -- Extended Cal variant
   | Cal !Term !Term !(M.Map Name Term)
   deriving (Eq)
 
@@ -154,7 +153,7 @@ data Book = Book (M.Map Name Term)
 -- =======
 
 instance Show Term where
-  show (Nam k)       = "^" ++ k
+  show (Nam k)       = k
   show (Var k)       = int_to_name k
   show (Dp0 k)       = int_to_name k ++ "₀"
   show (Dp1 k)       = int_to_name k ++ "₁"
@@ -361,7 +360,7 @@ fresh :: Env -> IO Name
 fresh e = do
   !n <- readIORef (env_new_id e)
   writeIORef (env_new_id e) (n + 1)
-  return n
+  return $! (n `shiftL` 6) + 63
 
 taker :: IORef (IM.IntMap a) -> Name -> IO (Maybe a)
 taker ref k = do
@@ -442,18 +441,14 @@ wnf_enter e s (Ref k) = do
   case M.lookup k m of
     Just f  -> do
       inc_inters e
-      -- Initialize Cal with an empty substitution map.
-      putStrLn $ ">> alloc             : " ++ show f
       wnf_enter e s (Cal (Nam ("@" ++ int_to_name k)) f M.empty)
     Nothing -> do
       error $ "UndefinedReference: " ++ int_to_name k
 
 wnf_enter e s (Cal f g m) = do
-  putStrLn $ ">> wnf_enter_cal      : " ++ show (Cal f g m)
   wnf_unwind e s (Cal f g m)
 
 wnf_enter e s f = do
-  putStrLn $ ">> wnf_enter          : " ++ show f
   wnf_unwind e s f
 
 -- WNF: Unwind
@@ -462,11 +457,12 @@ wnf_enter e s f = do
 wnf_unwind :: Env -> Stack -> Term -> IO Term
 wnf_unwind e [] v =
   case v of
-    -- WNF evaluation semantics: Cal f g % m evaluates by allocating g using m when standalone.
     Cal f g m -> do
       g_alloc <- wnf_alloc e m g
-      wnf e [] g_alloc
-    f         -> return f
+      g_done  <- wnf e [] g_alloc
+      putStrLn $ ">> wnf_app_cal (done)  : " ++ show g_done
+      return $ g_done
+    f -> return f
 wnf_unwind e (frame:s) v = case frame of
   FApp x -> case v of
     Lam fk ff    -> wnf_app_lam e s fk ff x
@@ -501,7 +497,6 @@ wnf_sub e s k takeFunc mkTerm = do
   mt <- takeFunc e k
   case mt of
     Just t  -> wnf e s t
-    -- If unbound, represent as Nam for debugging output (as seen in the trace).
     Nothing -> wnf_unwind e s (Nam (int_to_name k))
 
 -- (λx.f a)
@@ -571,6 +566,7 @@ wnf_dpn_suc e s k l p t = do
 -- ! X &L = Λ{0:z;1+:s}
 wnf_dpn_swi :: Env -> Stack -> Name -> Lab -> Term -> Term -> Term -> IO Term
 wnf_dpn_swi e s k l vz vs t = do
+  putStrLn "dpn_swi"
   inc_inters e
   z <- fresh e
   sc <- fresh e
@@ -592,8 +588,8 @@ wnf_dpn_nam e s k l n t = do
 wnf_app_cal :: Env -> Stack -> Term -> Term -> M.Map Name Term -> Term -> IO Term
 wnf_app_cal e s f g m a = do
   putStrLn $ ">> wnf_app_cal         : " ++ show (Cal f g m) ++ " " ++ show a
-  -- Inspect the structure of the book term g.
-  case g of
+  !g_wnf <- wnf e [] g
+  case g_wnf of
     Lam fx ff -> wnf_app_cal_lam e s f fx ff m a
     Swi fz fs -> wnf_app_cal_swi e s f fz fs m a
     _         -> wnf_unwind e s (App (Cal f g m) a)
@@ -603,15 +599,11 @@ wnf_app_cal_lam :: Env -> Stack -> Term -> Name -> Term -> M.Map Name Term -> Te
 wnf_app_cal_lam e s f x g m a = do
   putStrLn $ ">> wnf_app_cal_lam     : " ++ show (Cal f (Lam x g) m) ++ " " ++ show a
   inc_inters e
-  -- Add the substitution x->a to the map m (Lazy substitution).
-  let m' = M.insert x a m
-  -- We use (Var x) here conceptually; the actual substitution is tracked in m'.
-  wnf_enter e s (Cal (App f (Var x)) g m')
+  wnf_enter e s (Cal (App f (Var x)) g (M.insert x a m))
 
 -- ((f ~> Λ{0:z;1+:s} % m) a)
 wnf_app_cal_swi :: Env -> Stack -> Term -> Term -> Term -> M.Map Name Term -> Term -> IO Term
 wnf_app_cal_swi e s f z sc m a = do
-  -- Evaluate the argument 'a' to determine the interaction.
   !a_wnf <- wnf e [] a
   putStrLn $ ">> wnf_app_cal_swi     : " ++ show (Cal f (Swi z sc) m) ++ " " ++ show a ++ "→" ++ show a_wnf
   case a_wnf of
@@ -624,16 +616,16 @@ wnf_app_cal_swi e s f z sc m a = do
 -- ((f ~> Λ{...} % m) 0) -> (f 0) ~> z % m
 wnf_app_cal_swi_zer :: Env -> Stack -> Term -> Term -> M.Map Name Term -> IO Term
 wnf_app_cal_swi_zer e s f z m = do
-  putStrLn $ ">> wnf_app_cal_swi_zer : " ++ show f ++ "~>Λ{0:" ++ show z ++ ";1+:...} 0"
+  putStrLn $ ">> wnf_app_cal_swi_zer : " ++ show (Cal (App f Zer) z m)
   inc_inters e
   wnf_enter e s (Cal (App f Zer) z m)
 
 -- ((f ~> Λ{...} % m) 1+n) -> ((λp.(f 1+p) ~> s % m) n)
 wnf_app_cal_swi_suc :: Env -> Stack -> Term -> Term -> M.Map Name Term -> Term -> IO Term
 wnf_app_cal_swi_suc e s f sc m n = do
-  putStrLn $ ">> wnf_app_cal_swi_suc : " ++ show f ++ "~>Λ{0:...;1+:" ++ show sc ++ "} 1+" ++ show n
   inc_inters e
   p <- fresh e
+  putStrLn $ ">> wnf_app_cal_swi_suc : " ++ show (App (Cal (Lam p (App f (Suc (Var p)))) sc m) n)
   let cal_term = Cal (Lam p (App f (Suc (Var p)))) sc m
   wnf_enter e s (App cal_term n)
 
@@ -645,17 +637,17 @@ wnf_app_cal_swi_sup e s f z sc m l a b = do
 
   -- 1. Duplicate the context f (the caller).
   f' <- fresh e
+  z' <- fresh e
+  s' <- fresh e
   regis_dup e f' l f
+  regis_dup e z' l z
+  regis_dup e s' l sc
 
   -- 2. Duplicate the resources (the substitution map m). THIS IS THE FIX.
   (m0, m1) <- dup_substs e l m
 
-  -- 3. Structurally duplicate the branches z and sc (book terms) for fresh binders.
-  (z0, z1) <- alloc_dup e z
-  (sc0, sc1) <- alloc_dup e sc
-
-  let swi0 = Swi z0 sc0
-  let swi1 = Swi z1 sc1
+  let swi0 = Swi (Dp0 z') (Dp0 s')
+  let swi1 = Swi (Dp1 z') (Dp1 s')
   let app0 = App (Cal (Dp0 f') swi0 m0) a
   let app1 = App (Cal (Dp1 f') swi1 m1) b
   wnf_enter e s (Sup l app0 app1)
@@ -663,22 +655,24 @@ wnf_app_cal_swi_sup e s f z sc m l a b = do
 -- ! &L X = f ~> g % m
 wnf_dpn_cal :: Env -> Stack -> Name -> Lab -> Term -> Term -> M.Map Name Term -> Term -> IO Term
 wnf_dpn_cal e s k l f g m t = do
-  putStrLn $ ">> wnf_dpn_cal         : ! &" ++ int_to_name l ++ " " ++ int_to_name k ++ " = " ++ show (Cal f g m)
-  inc_inters e
+  error "todo"
 
-  -- 1. Duplicate f.
-  f' <- fresh e
-  regis_dup e f' l f
+  -- putStrLn $ ">> wnf_dpn_cal         : ! &" ++ int_to_name l ++ " " ++ int_to_name k ++ " = " ++ show (Cal f g m)
+  -- inc_inters e
 
-  -- 2. Duplicate the resources m.
-  (m0, m1) <- dup_substs e l m
+  -- -- 1. Duplicate f.
+  -- f' <- fresh e
+  -- regis_dup e f' l f
 
-  -- 3. Structurally duplicate g (the book term).
-  (g0, g1) <- alloc_dup e g
+  -- -- 2. Duplicate the resources m.
+  -- (m0, m1) <- dup_substs e l m
 
-  subst_dp0 e k (Cal (Dp0 f') g0 m0)
-  subst_dp1 e k (Cal (Dp1 f') g1 m1)
-  wnf_enter e s t
+  -- -- 3. Structurally duplicate g (the book term).
+  -- (g0, g1) <- alloc_dup e g
+
+  -- subst_dp0 e k (Cal (Dp0 f') g0 m0)
+  -- subst_dp1 e k (Cal (Dp1 f') g1 m1)
+  -- wnf_enter e s t
 
 -- WNF: Utils
 -- ----------
@@ -702,16 +696,16 @@ dup_bind e l (k, v) = do
 -- WNF: Allocation Helpers
 -- -----------------------
 
--- Helper to allocate (instantiate) a term with an empty substitution map.
-alloc :: Env -> Term -> IO Term
-alloc e t = wnf_alloc e M.empty t
+-- -- Helper to allocate (instantiate) a term with an empty substitution map.
+-- alloc :: Env -> Term -> IO Term
+-- alloc e t = wnf_alloc e M.empty t
 
--- Helper to create two independent allocated copies of a term.
-alloc_dup :: Env -> Term -> IO (Term, Term)
-alloc_dup e t = do
-  t0 <- alloc e t
-  t1 <- alloc e t
-  return (t0, t1)
+-- -- Helper to create two independent allocated copies of a term.
+-- alloc_dup :: Env -> Term -> IO (Term, Term)
+-- alloc_dup e t = do
+  -- t0 <- alloc e t
+  -- t1 <- alloc e t
+  -- return (t0, t1)
 
 -- WNF: Alloc
 -- ----------
@@ -890,8 +884,8 @@ book = """
 """
 
 main :: IO ()
--- main = run book $ "((" ++ f 18 ++ " λX.((X λT0.λF0.F0) λT1.λF1.T1)) λT2.λF2.T2)"
--- main = run book "λx.(@dbl 1+1+x)" -- λa.1+1+1+1+(^@dbl ^a)
+-- main = run book $ "((" ++ f 18 ++ " λX.((X λT0.λF0.F0) λT1.λF1.T1)) λT2.λF2.T2)" -- λa.λb.a
+-- main = run book "λx.(@dbl 1+1+x)" -- λa.1+1+1+1+(@dbl a)
 -- main = run book "(@not 0)" -- 1+0
 -- main = run book "(@not 1+0)" -- 0
 -- main = run book "! F & L = @id; !G & L = F₀; λx.(G₁ x)" -- λa.^a
@@ -904,5 +898,5 @@ main :: IO ()
 -- main = run book "λx.(@and x 0)" -- λa.((^@and ^a) 0)
 -- main = run book "(@sum 1+1+1+0)" -- 1+1+1+1+1+1+0
 -- main = run book "λx.(@sum 1+1+1+x)"
--- main = run book "(@foo X 1+0)" -- X
-main = run book "(@foo v &L{0,1+0})"
+-- main = run book "(@foo v 1+0)" -- v
+main = run book "(@foo v &L{0,1+0})" -- "&L{v,v}"
