@@ -123,6 +123,7 @@
 
 import Control.Monad (when, forM_)
 import Data.Bits (shiftL)
+import Data.Char (isDigit)
 import Data.IORef
 import Data.List (foldl', elemIndex)
 import System.CPUTime
@@ -173,10 +174,15 @@ instance Show Term where
   show (Lam k f)     = "λ" ++ int_to_name k ++ "." ++ show f
   show (App f x)     = "(" ++ show f ++ " " ++ show x ++ ")"
   show Zer           = "0"
-  show (Suc n)       = "1+" ++ show n
+  show (Suc p)       = show_add 1 p
   show (Swi z s)     = "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
   show (Ref k)       = "@" ++ int_to_name k
   show (Cal f g)     = show f ++ "~>" ++ show g
+
+show_add :: Int -> Term -> String
+show_add n (Suc p) = show_add (n + 1) p
+show_add n Zer     = show n
+show_add n term    = show n ++ "+" ++ show term
 
 instance Show Book where
   show (Book m) = unlines [ "@" ++ int_to_name k ++ " = " ++ show ct | (k, ct) <- M.toList m ]
@@ -224,8 +230,8 @@ parse_term_base = lexeme $ choice
   , parse_app
   , parse_sup
   , parse_era
-  , parse_zer
-  , parse_suc
+  , parse_add
+  , parse_nat
   , parse_ref
   , parse_var
   ]
@@ -289,11 +295,21 @@ parse_ref = do
   k <- parse_nam
   return (Ref (name_to_int k))
 
-parse_zer :: ReadP Term
-parse_zer = lexeme (char '0') >> return Zer
+parse_add :: ReadP Term
+parse_add = do
+  value <- parse_number
+  skipSpaces
+  _ <- char '+'
+  term <- parse_term_base
+  return (iterate Suc term !! value)
 
-parse_suc :: ReadP Term
-parse_suc = lexeme (string "1+") >> Suc <$> parse_term
+parse_nat :: ReadP Term
+parse_nat = do
+  value <- parse_number
+  return (iterate Suc Zer !! value)
+
+parse_number :: ReadP Int
+parse_number = read <$> munch1 isDigit
 
 parse_var :: ReadP Term
 parse_var = do
@@ -797,23 +813,24 @@ book = """
   @foo = &L{λx.x,λ{0:0;1+:λp.p}}
 """
 
+
 tests :: [(String,String)]
 tests =
-  [ ("(@not 0)", "1+0")
+  [ ("(@not 0)", "1")
   , ("(@not 1+0)", "0")
   , ("!F&L=@id;!G&L=F₀;λx.(G₁ x)", "λa.a")
   , ("(@and 0 0)", "0")
-  , ("(@and &L{0,1+0} 1+0)", "&L{0,1+0}")
-  , ("(@and &L{1+0,0} 1+0)", "&L{1+0,0}")
-  , ("(@and 1+0 &L{0,1+0})", "&L{0,1+0}")
-  , ("(@and 1+0 &L{1+0,0})", "&L{1+0,0}")
+  , ("(@and &L{0,1+0} 1+0)", "&L{0,1}")
+  , ("(@and &L{1+0,0} 1+0)", "&L{1,0}")
+  , ("(@and 1+0 &L{0,1+0})", "&L{0,1}")
+  , ("(@and 1+0 &L{1+0,0})", "&L{1,0}")
   , ("λx.(@and 0 x)", "λa.((@and 0) a)")
   , ("λx.(@and x 0)", "λa.((@and a) 0)")
-  , ("(@sum 1+1+1+0)", "1+1+1+1+1+1+0")
-  , ("λx.(@sum 1+1+1+x)", "λa.1+1+1+((@add a) 1+1+((@add a) 1+((@add a) (@sum a))))")
+  , ("(@sum 1+1+1+0)", "6")
+  , ("λx.(@sum 1+1+1+x)", "λa.3+((@add a) 2+((@add a) 1+((@add a) (@sum a))))")
   , ("(@foo 0)", "&L{0,0}")
-  , ("(@foo 1+1+1+0)", "&L{1+1+1+0,1+1+0}")
-  , ("λx.(@dbl 1+1+x)", "λa.1+1+1+1+(@dbl a)")
+  , ("(@foo 1+1+1+0)", "&L{3,2}")
+  , ("λx.(@dbl 1+1+x)", "λa.4+(@dbl a)")
   , ("(("++f 2++" λX.((X λT0.λF0.F0) λT1.λF1.T1)) λT2.λF2.T2)", "λa.λb.a")
   ]
 
