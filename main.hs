@@ -1,3 +1,5 @@
+{-./gen.bend-}
+
 -- Calculus of Interactions
 -- ========================
 -- CoI is a term rewrite system for the following grammar:
@@ -368,6 +370,15 @@ show_sub_map :: IM.IntMap Term -> String
 show_sub_map m = unlines [ int_to_name (k `div` 4) ++ suffix (k `mod` 4) ++ " ← " ++ show v | (k, v) <- IM.toList m ]
   where suffix x = case x of { 0 -> "" ; 1 -> "₀" ; 2 -> "₁" ; _ -> "?" }
 
+-- Utils
+-- =====
+
+sp0 :: Int -> Int
+sp0 x = (x * 16293 + 1) `mod` 65536
+
+sp1 :: Int -> Int
+sp1 x = (x * 32677 + 3) `mod` 65536
+
 -- Name Encoding/Decoding
 -- ======================
 
@@ -598,9 +609,22 @@ clone e l v = do
 clones :: Env -> Lab -> [Term] -> IO ([Term],[Term])
 clones e l []       = return $ ([],[])
 clones e l (x : xs) = do
-  (x0 , x1 ) <- clone  e l x
-  (xs0, xs1) <- clones e l xs
+  (x0  , x1 ) <- clone  e l x
+  (xs0 , xs1) <- clones e l xs
   return $ (x0 : xs0 , x1 : xs1)
+
+clone2 :: Env -> Lab -> (Term,Term) -> IO ((Term,Term),(Term,Term))
+clone2 e l (x,y) = do
+  (x0,x1) <- clone e l x
+  (y0,y1) <- clone e l y
+  return ((x0,y0),(x1,y1))
+
+clone2s :: Env -> Lab -> [(Term,Term)] -> IO ([(Term,Term)],[(Term,Term)])
+clone2s e l []         = return $ ([],[])
+clone2s e l (xy : xys) = do
+  (xy0  , xy1 ) <- clone2  e l xy
+  (xys0 , xys1) <- clone2s e l xys
+  return $ (xy0 : xys0, xy1 : xys1)
 
 -- WNF: Weak Normal Form
 -- =====================
@@ -1298,27 +1322,389 @@ inj e f (x : xs) = do
 inj e f [] = do
   return $ f
 
+-- SupGen
+-- ======
+
+-- Our goal now is to port SupGen functions from Bend to Haskell.
+-- IMPORTANT: In CoI, we must handle linearity (affinity) explicitly.
+-- 1. Convention: Always WNF immediately before pattern matching.
+-- 2. We must handle Sup/Era cases globally during generation.
+-- 3. When the search space forks (e.g., fork L), the entire context must be
+--    cloned using the fork label L.
+-- 4. When a superposition is encountered in a type (label tl), the context must
+--    be cloned using tl to distribute the generation process.
+
+-- Constants (from Bend definitions)
+
+max_elim :: Int
+max_elim = 2
+
+max_intr :: Int
+max_intr = 2
+
+rec_intr :: Int
+rec_intr = 1
+
+-- e: Env    = environment
+-- l: Int    = label (for forking the search space)
+-- d: Int    = depth (lam binders, used for internal variable names)
+-- k: Int    = budget (max_elim/intr)
+-- t: Term   = goal type
+-- s: Term   = spine/lhs (represented as application chain)
+-- f: [Term] = folds (list of spines eligible for recursion)
+-- r: Ann    = recursion (the function itself)
+-- b: [Ann]  = library (external fns)
+-- c: [Ann]  = context (internal vars)
+type Ann   = (Term,Term)
+type Gen a = Env -> Int -> Int -> Int -> Term -> Term -> [Term] -> Ann -> [Ann] -> [Ann] -> IO a
+
+-- Utils for SupGen
+-- ----------------
+
+-- Helper function to extract arguments from a spine Term (application chain).
+-- Corresponds to Term/LHS/to_list in Bend.
+lhs_to_list :: Term -> [Term]
+lhs_to_list tm = reverse (go tm [])
+  where go (App f x) acc = go f (x:acc)
+        go _ acc = acc
+
+-- Folding
+-- -------
+
+-- def Term/gen/Fol/arg(...) -> Term/gen/Fol:
+-- Applies arg to each spine in fol.
+gen_fol_arg :: Env -> [Term] -> Term -> IO [Term]
+gen_fol_arg e f arg = do -- FIXME: this is using arg non linearly
+  return $ map (\rxs -> App rxs arg) f
+
+-- Pattern-Matcher (LHS)
+-- ---------------------
+
+-- def Term/gen/lam(...) -> Term:
+gen_lam :: Gen Term
+gen_lam e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam :: " ++ show t
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (s0, s1) <- clone   e tl s
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam e l d k t0 s0 f0 r0 b0 c0
+      -- fork1    <- gen_lam e l d k t1 s1 f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      gen_lam_all e l d k t_wnf s f r b c
+    t' -> do
+      gen_body e l d k t' s f r b c
+
+-- def Term/gen/lam/all(...) -> Term:
+gen_lam_all :: Gen Term
+gen_lam_all e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_all :: " ++ show t
+  -- In Bend, this function checks if A is frozen. We skip that distinction here.
+  gen_lam_all_try e l d k t s f r b c
+
+-- def Term/gen/lam/all/try(...) -> Term:
+gen_lam_all_try :: Gen Term
+gen_lam_all_try e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_all_try (K=" ++ show k ++ ")"
+  if k == 0 then do
+    gen_lam_var e l d 0 t s f r b c
+  else do
+    (t0, t1) <- clone   e l t
+    (s0, s1) <- clone   e l s
+    (f0, f1) <- clones  e l f
+    (r0, r1) <- clone2  e l r
+    (b0, b1) <- clone2s e l b
+    (c0, c1) <- clone2s e l c
+    fork0    <- gen_lam_var e (sp0 l) d k     t0 s0 f0 r0 b0 c0
+    fork1    <- gen_lam_mat e (sp1 l) d (k-1) t1 s1 f1 r1 b1 c1
+    return $ Sup l fork0 fork1
+
+-- def Term/gen/lam/var(...) -> Term:
+gen_lam_var :: Gen Term
+gen_lam_var e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_var"
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (s0, s1) <- clone   e tl s
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam_var e l d k t0 s0 f0 r0 b0 c0
+      -- fork1    <- gen_lam_var e l d k t1 s1 f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    (All ta tb) -> do
+      x  <- fresh e
+      xv <- return $ Nam (int_to_name d)
+      s' <- return $ App s xv
+      f' <- gen_fol_arg e f xv
+      c' <- return $ c ++ [(xv, ta)]
+      t' <- return $ App tb xv
+      fn <- gen_lam e l (d + 1) k t' s' f' r b c'
+      return $ Lam x fn
+    _ -> do
+      return Era -- Cannot introduce lambda if type is not All.
+
+gen_lam_mat :: Gen Term
+gen_lam_mat e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_mat"
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (s0, s1) <- clone   e tl s
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam_mat e l d k t0 s0 f0 r0 b0 c0
+      -- fork1    <- gen_lam_mat e l d k t1 s1 f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      !a_wnf <- wnf e [] ta
+      case a_wnf of
+        Era -> do
+          return Era
+        Sup tl a0 a1 -> do
+          error "TODO"
+          -- (s0, s1)   <- clone   e tl s
+          -- (f0, f1)   <- clones  e tl f
+          -- (r0, r1)   <- clone2  e tl r
+          -- (b0, b1)   <- clone2s e tl b
+          -- (c0, c1)   <- clone2s e tl c
+          -- (tb0, tb1) <- clone   e tl tb
+          -- fork0      <- gen_lam_mat e l d k (All a0 tb0) s0 f0 r0 b0 c0
+          -- fork1      <- gen_lam_mat e l d k (All a1 tb1) s1 f1 r1 b1 c1
+          -- return $ Sup tl fork0 fork1
+        Nat -> do
+          -- Clones due to truly duplicated usage (not a fork)
+          (tb0, tb1) <- clone   e 0 tb
+          (s0, s1)   <- clone   e 0 s
+          (f0, f1)   <- clones  e 0 f
+          (r0, r1)   <- clone2  e 0 r
+          (b0, b1)   <- clone2s e 0 b
+          (c0, c1)   <- clone2s e 0 c
+          n          <- fresh e
+          m          <- fresh e
+          p          <- fresh e
+          z_t        <- return $ App tb0 Zer
+          z_s        <- return $ App s0 Zer
+          z_f        <- gen_fol_arg e f0 Zer
+          z_x        <- gen_lam e (sp0 l) d k z_t z_s z_f r0 b0 c0
+          s_t        <- return $ All Nat (Lam n (App tb1 (Suc (Var n))))
+          s_s        <- return $ App s1 (Lam m (Suc (Var m)))
+          s_f        <- return $ App s1 (Lam p (Var p)) : f1
+          s_x        <- gen_lam e (sp1 l) d k s_t s_s s_f r1 b1 c1
+          return $ Swi z_x s_x
+        _ -> do -- Cannot match on this argument type.
+          return Era
+    _ -> do -- Cannot match if type is not All.
+      return Era
+
+-- def Term/gen/body(...) -> Term:
+gen_body :: Gen Term
+gen_body e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_body :: " ++ show t
+  gen_expr e l d max_intr t s f r b c
+
+-- Enumerator (RHS)
+-- ----------------
+
+-- def Term/gen/expr(...) -> Term:
+gen_expr :: Gen Term
+gen_expr e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_expr (K=" ++ show k ++ ") :: " ++ show t
+  if k == 0 then do
+    return Zer
+    -- gen_pick e l d 0 t s f r b c
+  else do
+    (t0, t1) <- clone   e l t
+    (s0, s1) <- clone   e l s
+    (f0, f1) <- clones  e l f
+    (r0, r1) <- clone2  e l r
+    (b0, b1) <- clone2s e l b
+    (c0, c1) <- clone2s e l c
+    fork0    <- gen_intr e (sp0 l) d (k-1) t0 s0 f0 r0 b0 c0
+    -- fork0    <- return $ Zer
+    fork1    <- gen_pick e (sp1 l) d k t1 s1 f1 r1 b1 c1
+    -- fork1    <- return $ Zer
+    return $ Sup l fork0 fork1
+
+-- Introduce Constructor
+-- ---------------------
+
+-- def Term/gen/intr(...) -> Term:
+gen_intr :: Gen Term
+gen_intr e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_intr (K=" ++ show k ++ ") :: " ++ show t
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      (s0, s1) <- clone   e tl s
+      (f0, f1) <- clones  e tl f
+      (r0, r1) <- clone2  e tl r
+      (b0, b1) <- clone2s e tl b
+      (c0, c1) <- clone2s e tl c
+      fork0    <- gen_intr e l d k t0 s0 f0 r0 b0 c0
+      fork1    <- gen_intr e l d k t1 s1 f1 r1 b1 c1
+      return $ Sup tl fork0 fork1
+    Nat -> do
+      (s0, s1) <- clone   e l s
+      (f0, f1) <- clones  e l f
+      (r0, r1) <- clone2  e l r
+      (b0, b1) <- clone2s e l b
+      (c0, c1) <- clone2s e l c
+      fork0    <- return $ Zer
+      pred     <- gen_expr e (sp1 l) d k Nat s1 f1 r1 b1 c1
+      fork1    <- return $ Suc pred
+      return $ Sup l fork0 fork1
+    All ta tb -> do
+      error "TODO"
+    _ -> do
+      return Era -- Cannot introduce constructor for this type.
+
+-- Pick (Elimination/Application)
+-- ------------------------------
+
+gen_pick :: Gen Term
+gen_pick e l d k t s f r b c = do
+  gen_pick_lib e l d k t s f r b c
+
+gen_pick_lib :: Gen Term
+gen_pick_lib e l d k t s f r b c = do
+  case b of
+    [] -> do
+      gen_pick_fol e l d k t s f r [] c
+    ((tm, ty) : bs) -> do
+      (t0, t1)   <- clone   e l t
+      (s0, s1)   <- clone   e l s
+      (f0, f1)   <- clones  e l f
+      (r0, r1)   <- clone2  e l r
+      (c0, c1)   <- clone2s e l c
+      (bs0, bs1) <- clone2s e l bs
+      fork0      <- gen_call e (sp0 l) d k t0 s0 f0 r0 bs0 c0 tm ty
+      fork1      <- gen_pick_lib e (sp1 l) d k t1 s1 f1 r1 bs1 c1
+      return $ Sup l fork0 fork1
+
+gen_pick_fol :: Gen Term
+gen_pick_fol e l d k t s f r b c = do
+  case f of
+    [] -> do
+      gen_pick_ctx e l d k t s [] r b c
+    (rxs : fs) -> do
+      (t0, t1)     <- clone   e l t
+      (s0, s1)     <- clone   e l s
+      (b0, b1)     <- clone2s e l b
+      (c0, c1)     <- clone2s e l c
+      (r0, r1)     <- clone2  e l r
+      (fs0, fs1)   <- clones  e l fs
+      (tm0, ty0)   <- return $ r0
+      (tm0A, tm0B) <- clone e l tm0
+      (ty0A, ty0B) <- clone e l ty0
+      fork0        <- gen_fold e (sp0 l) d k t0 s0 [] (tm0A,ty0A) b0 c0 (lhs_to_list rxs) tm0B ty0B
+      fork1        <- gen_pick_fol e (sp1 l) d k t1 s1 fs1 r1 b1 c1
+      return $ Sup l fork0 fork1
+
+gen_pick_ctx :: Gen Term
+gen_pick_ctx e l d k t s f r b c = do
+  case c of
+    [] -> do
+      return Era
+    [(tm, ty)] -> do
+      gen_call e l d k t s f r b [] tm ty
+    ((tm, ty) : cs) -> do
+      (t0, t1)   <- clone   e l t
+      (s0, s1)   <- clone   e l s
+      (f0, f1)   <- clones  e l f
+      (r0, r1)   <- clone2  e l r
+      (b0, b1)   <- clone2s e l b
+      (cs0, cs1) <- clone2s e l cs
+      fork0      <- gen_call e (sp0 l) d k t0 s0 f0 r0 b0 cs0 tm ty
+      fork1      <- gen_pick_ctx e (sp1 l) d k t1 s1 f1 r1 b1 cs1
+      return $ Sup l fork0 fork1
+
+-- Callers
+-- -------
+
+-- def Term/gen/fold(...) -> Term:
+gen_fold :: Env -> Int -> Int -> Int -> Term -> Term -> [Term] -> Ann -> [Ann] -> [Ann] -> [Term] -> Term -> Term -> IO Term
+gen_fold e l d k t s f r b c args tm ty = do
+  case args of
+    [] -> do
+      gen_call e l d rec_intr t s f r b c tm ty
+    (arg : args_rest) -> do
+      case ty of
+        All ta tb -> do
+          let tm' = App tm arg
+          let ty' = App tb arg
+          gen_fold e l d k t s f r b c args_rest tm' ty'
+        _ -> do
+          return Era -- Type mismatch: expected All type.
+
+gen_call :: Env -> Int -> Int -> Int -> Term -> Term -> [Term] -> Ann -> [Ann] -> [Ann] -> Term -> Term -> IO Term
+gen_call e l d k t s f r b c tm ty = do
+  when debug $ putStrLn $ "gen_call (K=" ++ show k ++ ") :: " ++ show tm ++ " : " ++ show ty ++ " |- " ++ show t
+  !ty_wnf <- wnf e [] ty
+  case ty_wnf of
+    Era -> do
+      return Era
+    Sup tl ty0 ty1 -> do
+      error "TODO"
+      -- (t0, t1)   <- clone   e tl t
+      -- (s0, s1)   <- clone   e tl s
+      -- (f0, f1)   <- clones  e tl f
+      -- (r0, r1)   <- clone2  e tl r
+      -- (b0, b1)   <- clone2s e tl b
+      -- (c0, c1)   <- clone2s e tl c
+      -- (tm0, tm1) <- clone   e tl tm
+      -- fork0      <- gen_call e l d k t0 s0 f0 r0 b0 c0 tm0 ty0
+      -- fork1      <- gen_call e l d k t1 s1 f1 r1 b1 c1 tm1 ty1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      (s0, s1) <- clone   e l s
+      (f0, f1) <- clones  e l f
+      (r0, r1) <- clone2  e l r
+      (b0, b1) <- clone2s e l b
+      (c0, c1) <- clone2s e l c
+      arg      <- gen_expr e (sp0 l) d k ta s0 f0 r0 b0 c0
+      let tm'  = App tm arg
+      let ty'  = App tb arg
+      fun <- gen_call e (sp1 l) d k t s1 f1 r1 b1 c1 tm' ty'
+      return fun
+    _ -> do
+      !t_wnf   <- wnf e [] t
+      !ty_norm <- snf e d ty_wnf
+      !t_norm  <- snf e d t_wnf
+      if ty_norm == t_norm then
+        return tm
+      else
+        return Era
+
 -- Main
 -- ====
 
-run :: String -> String -> IO () 
-run book_src term_src = do
-  let book = read_book book_src
-  !env <- new_env book
-  let term = read_term term_src
-  !ini <- getCPUTime
-  !val <- alloc env term
-  !val <- col env val
-  !val <- snf env 1 val
-  -- !nf1 <- nf env 1 nf0
-  !end <- getCPUTime
-  !itr <- readIORef (env_inters env)
-  let diff = fromIntegral (end - ini) / (10^12)
-  let rate = fromIntegral itr / diff
-  putStrLn $ show val
-  putStrLn $ "- Itrs: " ++ show itr ++ " interactions"
-  printf "- Time: %.3f seconds\n" (diff :: Double)
-  printf "- Perf: %.2f M interactions/s\n" (rate / 1000000 :: Double)
+flatten :: Term -> [Term]
+flatten term = bfs [term] [] where
+  bfs []     acc = reverse acc
+  bfs (t:ts) acc = case t of
+    Sup _ a b -> bfs (ts ++ [a, b]) acc
+    _         -> bfs ts (t : acc)
 
 f :: Int -> String
 f n = "λf." ++ dups ++ final where
@@ -1371,9 +1757,25 @@ book = unlines
   , "@gen = !F&A=@gen &A{λx.!X&B=x;&B{X₀,1+X₁},λ{0:&C{0,1};1+:λp.!G&D=F₁;!P&D=p;&D{(G₀ P₀),!H&E=G₁;!Q&E=P₁;1+&E{(H₀ Q₀),1+(H₁ Q₁)}}}}"
   ]
 
+run :: String -> String -> IO () 
+run book_src term_src = do
+  !env <- new_env $ read_book book_src
+  !ini <- getCPUTime
+  !val <- alloc env $ read_term term_src
+  !val <- col env val
+  !val <- snf env 1 val
+  !end <- getCPUTime
+  !itr <- readIORef (env_inters env)
+  !dt  <- return $ fromIntegral (end - ini) / (10^12)
+  !ips <- return $ fromIntegral itr / dt
+  putStrLn $ show val
+  putStrLn $ "- Itrs: " ++ show itr ++ " interactions"
+  printf "- Time: %.3f seconds\n" (dt :: Double)
+  printf "- Perf: %.2f M interactions/s\n" (ips / 1000000 :: Double)
+
 test :: IO ()
 test = forM_ tests $ \ (src, exp) -> do
-  env <- new_env (read_book book)
+  env <- new_env $ read_book book
   det <- col env $ read_term src
   det <- show <$> snf env 1 det
   if det == exp then do
@@ -1383,5 +1785,25 @@ test = forM_ tests $ \ (src, exp) -> do
     putStrLn $ "  - expected: " ++ exp
     putStrLn $ "  - detected: " ++ det
 
+-- -- e: Env    = environment
+-- -- l: Int    = label (for forking)
+-- -- d: Int    = depth (lam binders)
+-- -- k: Int    = max_elim/intr
+-- -- t: Term   = goal type
+-- -- s: Term   = spine/lhs
+-- -- f: [Term] = folds
+-- -- r: Ann    = recursion
+-- -- b: [Ann]  = library (external fns)
+-- -- c: [Ann]  = context (internal vars)
+-- type Gen a = Env -> Int -> Int -> Int -> Term -> Term -> [Term] -> Ann -> [Ann] -> [Ann] -> IO a
+
 main :: IO ()
-main = test
+main = do
+  !env <- new_env $ read_book book
+  !val <- gen_lam env 1 0 max_elim (All Nat (Lam 0 Nat)) (Lam 0 (Var 0)) [] (Nam "F", (All Nat (Lam 0 Nat))) [] []
+  !val <- col env val
+  !val <- snf env 1 val
+  !val <- return $ flatten val
+  -- print $ val
+  forM_ val $ \x ->
+    print x
