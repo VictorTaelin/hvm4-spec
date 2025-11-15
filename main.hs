@@ -260,12 +260,6 @@ data Func
   | Ret !Term
   deriving (Eq, Show)
 
-data Tag
-  = VAR
-  | DP0
-  | DP1
-  deriving (Enum)
-
 data Book = Book (M.Map Name Func)
 type Path = [(Lab, Int)]
 type Subs = IM.IntMap Term
@@ -289,6 +283,18 @@ data Frame
   deriving (Show)
 
 type Stack = [Frame]
+
+-- Utils
+-- =====
+
+name_of :: Term -> Name
+name_of (Var k) = k
+name_of (Dp0 k) = k
+name_of (Dp1 k) = k
+
+dp :: Int -> Name -> Term
+dp 0 k = Dp0 k
+dp 1 k = Dp1 k
 
 -- Showing
 -- =======
@@ -596,7 +602,8 @@ subst e k v = modifyIORef' (env_sub_map e) (IM.insert k v)
 -- ---------------------
 
 clone_ref_stack :: Env -> Lab -> Stack -> IO (Stack, Stack)
-clone_ref_stack _ _ [] = return ([], [])
+clone_ref_stack _ _ [] = do
+  return ([], [])
 clone_ref_stack e l (frame : s) = do
   (f0, f1) <- case frame of
     FApp x -> do
@@ -643,18 +650,6 @@ semi_ctr (Semi n f) = Semi (n + 1) (\ (h:hs) -> App (f hs) (Suc h))
 semi_term :: Semi -> Term
 semi_term (Semi n f) = f (replicate n (Nam "_"))
 
--- Tag / Dir utilities
--- ====================
-
-kind_term :: Tag -> Name -> Term
-kind_term VAR k = Var k
-kind_term DP0 k = Dp0 k
-kind_term DP1 k = Dp1 k
-
-dp :: Int -> Name -> Term
-dp 0 k = Dp0 k
-dp 1 k = Dp1 k
-
 -- WNF: Weak Normal Form
 -- =====================
 
@@ -668,21 +663,21 @@ wnf_enter :: Env -> Stack -> Term -> IO Term
 
 wnf_enter e s (Var k) = do
   when debug $ putStrLn $ ">> wnf_enter_var        : " ++ show (Var k)
-  wnf_sub VAR e s k
+  wnf_sub e s (Var k)
 
 wnf_enter e s (Dp0 k) = do
   when debug $ putStrLn $ ">> wnf_enter_dp0        : " ++ show (Dp0 k)
   mlv <- take_dup e k
   case mlv of
     Just (l, v) -> wnf_enter e (FDp0 k l : s) v
-    Nothing     -> wnf_sub DP0 e s k
+    Nothing     -> wnf_sub e s (Dp0 k)
 
 wnf_enter e s (Dp1 k) = do
   when debug $ putStrLn $ ">> wnf_enter_dp1        : " ++ show (Dp1 k)
   mlv <- take_dup e k
   case mlv of
     Just (l, v) -> wnf_enter e (FDp1 k l : s) v
-    Nothing     -> wnf_sub DP1 e s k
+    Nothing     -> wnf_sub e s (Dp1 k)
 
 wnf_enter e s (App f x) = do
   when debug $ putStrLn $ ">> wnf_enter_app        : " ++ show (App f x)
@@ -708,60 +703,52 @@ wnf_enter e s f = do
 -- -----------
 
 wnf_unwind :: Env -> Stack -> Term -> IO Term
-wnf_unwind _ []    v = return v
+wnf_unwind _ [] v = return v
 wnf_unwind e (fr:s) v = do
   when debug $ putStrLn $ ">> wnf_unwind           : " ++ show v
   case fr of
-    FApp x ->
-      case v of
-        Era          -> wnf_app_era e s x
-        Sup fl fa fb -> wnf_app_sup e s fl fa fb x
-        Set          -> wnf_app_set e s x
-        All va vb    -> wnf_app_all e s va vb x
-        Lam fk ff    -> wnf_app_lam e s fk ff x
-        Nat          -> wnf_app_nat e s x
-        Zer          -> wnf_app_zer e s x
-        Suc vp       -> wnf_app_suc e s vp x
-        Nam fk       -> wnf_app_nam e s fk x
-        Dry ff fx    -> wnf_app_dry e s ff fx x
-        f'           -> wnf_unwind e s (App f' x)
-    FDp0 k l ->
-      case v of
-        Era          -> wnf_dpn_era 0 e s k l
-        Sup vl va vb -> wnf_dpn_sup 0 e s k l vl va vb
-        Set          -> wnf_dpn_set 0 e s k l
-        All va vb    -> wnf_dpn_all 0 e s k l va vb
-        Lam vk vf    -> wnf_dpn_lam 0 e s k l vk vf
-        Nat          -> wnf_dpn_nat 0 e s k l
-        Zer          -> wnf_dpn_zer 0 e s k l
-        Suc vp       -> wnf_dpn_suc 0 e s k l vp
-        Nam vk       -> wnf_dpn_nam 0 e s k l vk
-        Dry vf vx    -> wnf_dpn_dry 0 e s k l vf vx
-        val          -> wnf_unwind e s (Dup k l val (Dp0 k))
-    FDp1 k l ->
-      case v of
-        Era          -> wnf_dpn_era 1 e s k l
-        Sup vl va vb -> wnf_dpn_sup 1 e s k l vl va vb
-        Set          -> wnf_dpn_set 1 e s k l
-        All va vb    -> wnf_dpn_all 1 e s k l va vb
-        Lam vk vf    -> wnf_dpn_lam 1 e s k l vk vf
-        Nat          -> wnf_dpn_nat 1 e s k l
-        Zer          -> wnf_dpn_zer 1 e s k l
-        Suc vp       -> wnf_dpn_suc 1 e s k l vp
-        Nam vk       -> wnf_dpn_nam 1 e s k l vk
-        Dry vf vx    -> wnf_dpn_dry 1 e s k l vf vx
-        val          -> wnf_unwind e s (Dup k l val (Dp1 k))
+    FApp x      -> wnf_app e s v x
+    FDp0 k l    -> wnf_dpn 0 e s k l v
+    FDp1 k l    -> wnf_dpn 1 e s k l v
+
+wnf_app :: Env -> Stack -> Term -> Term -> IO Term
+wnf_app e s v x = case v of
+  Era          -> wnf_app_era e s x
+  Sup fl fa fb -> wnf_app_sup e s fl fa fb x
+  Set          -> wnf_app_set e s x
+  All va vb    -> wnf_app_all e s va vb x
+  Lam fk ff    -> wnf_app_lam e s fk ff x
+  Nat          -> wnf_app_nat e s x
+  Zer          -> wnf_app_zer e s x
+  Suc vp       -> wnf_app_suc e s vp x
+  Nam fk       -> wnf_app_nam e s fk x
+  Dry ff fx    -> wnf_app_dry e s ff fx x
+  f'           -> wnf_unwind e s (App f' x)
+
+wnf_dpn :: Int -> Env -> Stack -> Name -> Lab -> Term -> IO Term
+wnf_dpn d e s k l v = case v of
+  Era          -> wnf_dpn_era d e s k l
+  Sup vl va vb -> wnf_dpn_sup d e s k l vl va vb
+  Set          -> wnf_dpn_set d e s k l
+  All va vb    -> wnf_dpn_all d e s k l va vb
+  Lam vk vf    -> wnf_dpn_lam d e s k l vk vf
+  Nat          -> wnf_dpn_nat d e s k l
+  Zer          -> wnf_dpn_zer d e s k l
+  Suc vp       -> wnf_dpn_suc d e s k l vp
+  Nam vk       -> wnf_dpn_nam d e s k l vk
+  Dry vf vx    -> wnf_dpn_dry d e s k l vf vx
+  val          -> wnf_unwind e s (Dup k l val (dp d k))
 
 -- WNF: Interactions
 -- -----------------
 
-wnf_sub :: Tag -> Env -> Stack -> Name -> IO Term
-wnf_sub ki e s k = do
-  when debug $ putStrLn $ "## wnf_sub              : " ++ int_to_name k
-  mt <- take_sub e k
+wnf_sub :: Env -> Stack -> Term -> IO Term
+wnf_sub e s v = do
+  when debug $ putStrLn $ "## wnf_sub              : " ++ int_to_name (name_of v)
+  mt <- take_sub e (name_of v)
   case mt of
     Just t  -> wnf e s t
-    Nothing -> wnf_unwind e s (kind_term ki k)
+    Nothing -> wnf_unwind e s v
 
 wnf_app_era :: Env -> Stack -> Term -> IO Term
 wnf_app_era e s v = do
@@ -939,8 +926,8 @@ wnf_dpn_dry d e s k l vf vx = do
     subst e k val0
     wnf e s val1
 
--- WNF: Ref Logic
--- --------------
+-- WNF: Ref
+-- --------
 
 wnf_ref_apply :: Env -> Semi -> Func -> Stack -> Subs -> Path -> IO Term
 wnf_ref_apply e sp func s m p = do
@@ -1306,8 +1293,9 @@ tests =
   -- , ("(@sum 1+1+1+0)", "6")
   -- , ("λx.(@sum 1+1+1+x)", "λa.3+(@add a 2+(@add a 1+(@add a (@sum a))))")
   , ("(@foo 0)", "&L{0,0}")
-  , ("(@foo 1+1+1+0)", "&L{3,2}")
-  , ("λx.(@dbl 1+1+x)", "λa.4+(@dbl a)")
+  , ("(@foo 3)", "&L{3,2}")
+  , ("(@dbl 3)", "6")
+  , ("λx.(@dbl 2+x)", "λa.4+(@dbl a)")
   , ("("++f 2++" λX.(X λT0.λF0.F0 λT1.λF1.T1) λT2.λF2.T2)", "λa.λb.a")
   , ("1+&L{0,1}", "&L{1,2}")
   , ("1+&A{&B{0,1},&C{2,3}}", "&A{&B{1,2},&C{3,4}}")
@@ -1328,7 +1316,7 @@ book = unlines
   , "@id  = Λa.a"
   , "@dup = Λx. λt. (t x x)"
   , "@not = Λ{0:1+0;1+:Λp.0}"
-  , "@dbl = Λ{0:0;1+:Λp.1+1+(@dbl p)}"
+  , "@dbl = Λ{0:0;1+:Λp.2+(@dbl p)}"
   , "@and = Λ{0:Λ{0:0;1+:Λp.0};1+:Λp.Λ{0:0;1+:Λp.1+0}}"
   , "@add = Λ{0:Λb.b;1+:Λa.Λb.1+(@add a b)}"
   -- , "@sum = Λ{0:0;1+:Λp.(@add p (@sum p))}"
