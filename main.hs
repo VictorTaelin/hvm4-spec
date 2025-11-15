@@ -1039,42 +1039,6 @@ wnf_ref_stuck e sp s m p = do
   t <- wnf_unwind e s t
   wnf_ref_wrap e t p
 
--- Alloc / Bind / Wrap
--- -------------------
-
-alloc :: Env -> Subs -> Term -> IO Term
-alloc e subs term = go subs IM.empty term where
-  go :: Subs -> IM.IntMap Name -> Term -> IO Term
-  go s r (Var k) =
-    case IM.lookup k s of
-      Just v  -> return v
-      Nothing -> return (Var (IM.findWithDefault k k r))
-  go _ r (Dp0 k)       = return (Dp0 (IM.findWithDefault k k r))
-  go _ r (Dp1 k)       = return (Dp1 (IM.findWithDefault k k r))
-  go _ _ Era           = return Era
-  go s r (Sup l a b)   = do
-    a' <- go s r a
-    b' <- go s r b
-    return (Sup l a' b')
-  go s r (Dup k l v t) = do
-    k' <- fresh e
-    v' <- go s r v
-    t' <- go s (IM.insert k k' r) t
-    return (Dup k' l v' t')
-  go _ _ Set           = return Set
-  go s r (All a b)     = All <$> go s r a <*> go s r b
-  go s r (Lam k f)     = do
-    k' <- fresh e
-    f' <- go s (IM.insert k k' r) f
-    return (Lam k' f')
-  go s r (App f x)     = App <$> go s r f <*> go s r x
-  go _ _ Nat           = return Nat
-  go _ _ Zer           = return Zer
-  go s r (Suc n)       = Suc <$> go s r n
-  go _ _ (Ref k)       = return (Ref k)
-  go _ _ (Nam x)       = return (Nam x)
-  go s r (Dry f x)     = Dry <$> go s r f <*> go s r x
-
 wnf_ref_bind :: Term -> Path -> Term
 wnf_ref_bind x []        = x
 wnf_ref_bind x ((l,0):p) = Sup l (wnf_ref_bind x p) Era
@@ -1086,6 +1050,110 @@ wnf_ref_wrap e t ((l,d):p) = do
   f <- return $ case d of { 0 -> Dp0 ; 1 -> Dp1 }
   t <- return $ Dup k l t (f k)
   wnf_ref_wrap e t p
+
+-- Allocation
+-- ==========
+
+type Holders = IORef (IM.IntMap Name)
+
+alloc :: Env -> Subs -> Term -> IO Term
+alloc e subs term = do
+  holders <- newIORef IM.empty
+  alloc_term e holders subs term
+
+alloc_term :: Env -> Holders -> Subs -> Term -> IO Term
+alloc_term e holders subs term = case term of
+
+  Var k -> do
+    case IM.lookup k subs of
+      Nothing -> error $ "unbound variable: " ++ int_to_name k
+      Just v  -> alloc_var e holders k 0 v
+
+  Dp0 k -> do
+    case IM.lookup k subs of
+      Just (Var k) -> alloc_var e holders k 1 (Dp0 k)
+      _            -> error $ "unbound variable: " ++ int_to_name k ++ "₀"
+
+  Dp1 k -> do
+    case IM.lookup k subs of
+      Just (Var k) -> alloc_var e holders k 2 (Dp1 k)
+      _            -> error $ "unbound variable: " ++ int_to_name k ++ "₁"
+
+  Era -> do
+    return Era
+
+  Sup l a b -> do
+    a' <- alloc_term e holders subs a
+    b' <- alloc_term e holders subs b
+    return (Sup l a' b')
+
+  Dup k l v t -> do
+    k' <- fresh e
+    v' <- alloc_term e holders subs v
+    t' <- alloc_term e holders (IM.insert k (Var k') subs) t
+    return (Dup k' l v' t')
+
+  Set -> do
+    return Set
+
+  All a b -> do
+    a' <- alloc_term e holders subs a
+    b' <- alloc_term e holders subs b
+    return (All a' b')
+
+  Lam k f -> do
+    k' <- fresh e
+    f' <- alloc_term e holders (IM.insert k (Var k') subs) f
+    return (Lam k' f')
+
+  App f x -> do
+    f' <- alloc_term e holders subs f
+    x' <- alloc_term e holders subs x
+    return (App f' x')
+
+  Nat -> do
+    return Nat
+
+  Zer -> do
+    return Zer
+
+  Suc n -> do
+    n' <- alloc_term e holders subs n
+    return (Suc n')
+
+  Ref k -> do
+    return (Ref k)
+
+  Nam x -> do
+    return (Nam x)
+
+  Dry f x -> do
+    f' <- alloc_term e holders subs f
+    x' <- alloc_term e holders subs x
+    return (Dry f' x')
+
+alloc_var :: Env -> Holders -> Name -> Int -> Term -> IO Term
+alloc_var e holders k tag v = do
+  hs <- readIORef holders
+  let key = (k `shiftL` 2) + tag
+  case IM.lookup key hs of
+    Nothing -> do
+      h <- fresh e
+      subst VAR e h v
+      writeIORef holders (IM.insert key h hs)
+      return (Var h)
+    Just old_h -> do
+      m_prev <- take_sub VAR e old_h
+      case m_prev of
+        Nothing -> do
+          error "unreachable"
+        Just v_prev -> do
+          (d0, d1) <- clone e 0 v_prev
+          subst VAR e old_h d0
+          new_h <- fresh e
+          subst VAR e new_h d1
+          writeIORef holders (IM.insert key new_h hs)
+          return (Var new_h)
 
 -- Normalization
 -- =============
@@ -1276,24 +1344,6 @@ test = forM_ tests $ \ (src, expd) -> do
 
 main :: IO ()
 main = test
-
-
--- PROBLEM: the commented out test is failing.
-
--- [FAIL] !F&L=@id;!G&L=F₀;λx.(G₁ x)
-  -- - expected: λa.a
-  -- - detected: λa.&{}
-
--- why it reduces to λa.&{}?
-
--- reason about the code and explain it below in English.
--- provide example execution traces to back up your answer.
-
-
-
-
-
-
 
 
 
