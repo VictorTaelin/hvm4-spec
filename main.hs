@@ -199,6 +199,7 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 
 debug :: Bool
+-- debug = True
 debug = False
 
 -- Types
@@ -921,7 +922,7 @@ wnd_dup_dry d e s k l vf vx = do
 
 wnf_ref_app :: Env -> Semi -> Term -> Stack -> Subs -> Path -> IO Term
 wnf_ref_app e sp func s m p = do
-  when debug $ putStrLn $ "## wnf_ref_app        : " ++ show (semi_term sp) ++ " " ++ show func
+  when debug $ putStrLn $ "## wnf_ref_app          : " ++ show (semi_term sp) ++ " " ++ show func
   case s of
     FDp0 k l : s' -> wnf_ref_app_dp0 e sp func s' m p k l
     FDp1 k l : s' -> wnf_ref_app_dp1 e sp func s' m p k l
@@ -1758,7 +1759,8 @@ book = unlines
   , "@add = λ{0:λb.b;1+:λa.λb.1+(@add a b)}"
   , "@sum = λ{0:0;1+:λp.1+(@add p (@sum p))}"
   , "@foo = &L{λx.x,λ{0:0;1+:λp.p}}"
-  -- , "@gen = !F&A=@gen &A{λx.!X&B=x;&B{X₀,1+X₁},λ{0:&C{0,1};1+:λp.!G&D=F₁;!P&D=p;&D{(G₀ P₀),!H&E=G₁;!Q&E=P₁;1+&E{(H₀ Q₀),1+(H₁ Q₁)}}}}"
+  , "@fn0 = &A{λx.!X&B=x;&B{X₀,1+X₁},λ{0:&C{0,1};1+:λp.!P&D=p;&D{(@fn0 P₀),!Q&E=P₁;1+&E{(@fn0 Q₀),1+(@fn0 Q₁)}}}}"
+  , "@fn1 = &A{λx.!X&B=x;&B{X₀,1+X₁},λ{0:0;1+:λp.(@fn1 p)}}"
   ]
 
 run :: String -> String -> IO ()
@@ -1795,11 +1797,11 @@ main :: IO ()
 main = do
   !env <- new_env $ read_book book
   !typ <- return $ All Nat (Lam 0 Nat)
-  !val <- alloc env IM.empty $ read_term "&L{0,1}"
-  !val <- gen_lam env 1 0 2 typ (semi_new 0) [] (Nam "F", typ) [] []
+  !val <- alloc env IM.empty $ read_term "@fn1"
+  print val
+  -- !val <- gen_lam env 1 0 2 typ (semi_new 0) [] (Nam "F", typ) [] []
   !val <- collapse env val
   !val <- snf env 1 val
-  -- print $ val
-  !val <- return $ flatten val
-  forM_ val $ \ x -> do
-    print $ x
+  print val
+  -- !val <- return $ flatten val
+  -- forM_ val print
