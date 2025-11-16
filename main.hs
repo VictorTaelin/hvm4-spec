@@ -17,16 +17,11 @@
 -- | Nat ::= "ℕ"
 -- | Zer ::= "0"
 -- | Suc ::= "1+"
+-- | Swi ::= "λ" "{" "0" ":" Term ";"? "1+" ":" Term ";"? "}"
 -- | Ref ::= "@" Name
 -- | Nam ::= "." Name
 -- | Dry ::= "." "(" Term " " Term ")"
---
--- Func ::=
--- | Abs ::= "Λ" Name "." Func
--- | Swi ::= "Λ" "{" "0" ":" Func ";"? "1+" ":" Func ";"? "}"
--- | Frk ::= "&" Name "{" Func "," Func "}"
--- | Del ::= "&" "{" "}"
--- | Ret ::= Term
+-- | Sup ::= "&" Name "{" Term "," Term "}"
 --
 -- Where:
 -- - Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $
@@ -111,30 +106,10 @@
 -- ! A &L = a
 -- &L{(f A₀),(g A₁)}
 --
--- (* a)
--- ----- app-set
--- ⊥
---
--- ((∀A.B) a)
--- ---------- app-all
--- ⊥
---
 -- (λx.f a)
 -- -------- app-lam
 -- x ← a
 -- f
---
--- (ℕ a)
--- ----- app-nat
--- ⊥
---
--- (1+n a)
--- ------- app-suc
--- ⊥
---
--- (0 a)
--- ----- app-zer
--- ⊥
 --
 -- (.n a)
 -- ------ app-nam
@@ -149,28 +124,28 @@
 -- 
 -- A state (F, X, S, M, P) is evolved, where:
 -- - F: Spine = current call context
--- - X: Func  = current Func from book
+-- - X: Term  = current Term from book
 -- - S: Stack = argument stack
 -- - M: Map   = static substitutions
 -- - P: Path  = dup label path
 --
--- (F, Λx.G, (_ A):S, M, P)
+-- (F, λx.G, (_ A):S, M, P)
 -- -------------------------------- ref-app-lam
 -- (F(x), G, S, {x→bind(A,P)|M}, P)
 --
--- (F, Λ{0:Z;1+:S}, 0:S, M, P)
+-- (F, λ{0:Z;1+:S}, 0:S, M, P)
 -- --------------------------- ref-app-swi-zer
 -- (F(0), Z, S, M, P)
 --
--- (F, Λ{0:Z;1+:S}, 1+A:S, M, P)
+-- (F, λ{0:Z;1+:S}, 1+A:S, M, P)
 -- ----------------------------- ref-app-swi-suc
 -- (\h->F(1+h), S, A:S, M, P)
 --
--- (F, Λ{0:Z;1+:S}, &L{A,B}:S, M, P)
+-- (F, λ{0:Z;1+:S}, &L{A,B}:S, M, P)
 -- --------------------------------- ref-app-swi-sup
 -- &L{
---   (F, Λ{0:Z;1+:S}, A:S, M, P++[&L₀])
---   (F, Λ{0:Z;1+:S}, B:S, M, P++[&L₁])
+--   (F, λ{0:Z;1+:S}, A:S, M, P++[&L₀])
+--   (F, λ{0:Z;1+:S}, B:S, M, P++[&L₁])
 -- }
 --
 -- (F, G, (!K&L=_; K₀):S, M, P)
@@ -186,7 +161,7 @@
 -- &{}
 --
 -- (F, &L{X,Y}, S, M, P)
--- --------------------- ref-frk
+-- --------------------- ref-sup
 -- if &L₀ ∈ P:
 --   (F, X, S, M, P - {&L})
 -- else if &L₁ ∈ P:
@@ -200,13 +175,14 @@
 --     (F₁, Y, S₁, M₁, P)
 --   }
 --
--- (F, Ret G, S, M, P)
--- -------------------- ref-alloc
--- wrap(alloc(G, M), P)
---
 -- (F, G, S, M, P)
--- -------------------- ref-stuck
--- wrap(alloc(F, M), P)
+-- -------------------- ref-alloc
+-- if complete:
+--   wrap(alloc(G, M), P)
+-- else:
+--   wrap(alloc(F, M), P)
+
+-- COMPLETE REFACTORED FILE:
 
 {-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -O2 #-}
@@ -243,6 +219,7 @@ data Term
   | Set
   | All !Term !Term
   | Lam !Name !Term
+  | Swi !Term !Term
   | App !Term !Term
   | Nat
   | Zer
@@ -252,15 +229,7 @@ data Term
   | Dry !Term !Term
   deriving (Eq)
 
-data Func
-  = Abs !Name !Func
-  | Swi !Func !Func
-  | Frk !Lab !Func !Func
-  | Del
-  | Ret !Term
-  deriving (Eq, Show)
-
-data Book = Book (M.Map Name Func)
+data Book = Book (M.Map Name Term)
 type Path = [(Lab, Int)]
 type Subs = IM.IntMap Term
 data Semi = Semi !Int !([Term] -> Term)
@@ -313,6 +282,7 @@ instance Show Term where
   show Nat           = "ℕ"
   show Zer           = "0"
   show (Suc p)       = show_add 1 p
+  show (Swi z s)     = "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
   show (Ref k)       = "@" ++ int_to_name k
   show (Nam k)       = (if debug then "." else "") ++ k
   show (Dry f x)     = (if debug then "." else "") ++ show_app f [x]
@@ -328,14 +298,7 @@ show_app (App f x) args = show_app f (x : args)
 show_app f         args = "(" ++ unwords (map show (f : args)) ++ ")"
 
 instance Show Book where
-  show (Book m) = unlines [ "@" ++ int_to_name k ++ " = " ++ show_func ct | (k, ct) <- M.toList m ]
-
-show_func :: Func -> String
-show_func (Abs k f)   = "Λ" ++ int_to_name k ++ "." ++ show_func f
-show_func (Swi z s)   = "Λ{0:" ++ show_func z ++ ";1+:" ++ show_func s ++ "}"
-show_func (Frk k a b) = "&" ++ int_to_name k ++ "{" ++ show_func a ++ "," ++ show_func b ++ "}"
-show_func Del         = "&{}"
-show_func (Ret t)     = show t
+  show (Book m) = unlines [ "@" ++ int_to_name k ++ " = " ++ show ct | (k, ct) <- M.toList m ]
 
 -- Name Encoding/Decoding
 -- ======================
@@ -376,7 +339,8 @@ parse_term = parse_term_base
 
 parse_term_base :: ReadP Term
 parse_term_base = lexeme $ choice
-  [ parse_lam
+  [ parse_swi
+  , parse_lam
   , parse_dup
   , parse_app
   , parse_era
@@ -403,6 +367,17 @@ parse_lam = do
   lexeme (char '.')
   body <- parse_term
   return (Lam (name_to_int k) body)
+
+parse_swi :: ReadP Term
+parse_swi = do
+  lexeme (char 'λ')
+  between (lexeme (char '{')) (lexeme (char '}')) $ do
+    lexeme (string "0:")
+    z <- parse_term
+    optional (lexeme (char ';'))
+    lexeme (string "1+:")
+    s <- parse_term
+    return (Swi z s)
 
 parse_dup :: ReadP Term
 parse_dup = do
@@ -472,56 +447,12 @@ parse_var = do
     , return (Var kid)
     ]
 
--- Func Parsing
--- ------------
-
-parse_func :: ReadP Func
-parse_func = lexeme $ choice
-  [ parse_abs
-  , parse_swi
-  , parse_del
-  , parse_frk
-  , Ret <$> parse_term
-  ]
-
-parse_abs :: ReadP Func
-parse_abs = do
-  lexeme (char 'Λ')
-  k <- parse_nam
-  lexeme (char '.')
-  body <- parse_func
-  return (Abs (name_to_int k) body)
-
-parse_swi :: ReadP Func
-parse_swi = do
-  lexeme (char 'Λ')
-  between (lexeme (char '{')) (lexeme (char '}')) $ do
-    lexeme (string "0:")
-    z <- parse_func
-    optional (lexeme (char ';'))
-    lexeme (string "1+:")
-    s <- parse_func
-    return (Swi z s)
-
-parse_del :: ReadP Func
-parse_del = lexeme (string "&{}") >> return Del
-
-parse_frk :: ReadP Func
-parse_frk = do
-  lexeme (char '&')
-  l <- parse_nam
-  between (lexeme (char '{')) (lexeme (char '}')) $ do
-    a <- parse_func
-    optional (lexeme (char ','))
-    b <- parse_func
-    return (Frk (name_to_int l) a b)
-
-parse_book_entry :: ReadP (Name, Func)
+parse_book_entry :: ReadP (Name, Term)
 parse_book_entry = do
   lexeme (char '@')
   k <- parse_nam
   lexeme (char '=')
-  f <- parse_func
+  f <- parse_term
   return (name_to_int k, f)
 
 parse_book :: ReadP Book
@@ -582,6 +513,12 @@ take_sub e k = map_take (env_sub_map e) k
 make_dup :: Env -> Name -> Lab -> Term -> IO ()
 make_dup e k l v = modifyIORef' (env_dup_map e) (IM.insert k (l, v))
 
+subst :: Env -> Name -> Term -> IO ()
+subst e k v = modifyIORef' (env_sub_map e) (IM.insert k v)
+
+-- Cloning
+-- -------
+
 clone :: Env -> Lab -> Term -> IO (Term, Term)
 clone e l v = do
   k <- fresh e
@@ -595,11 +532,18 @@ clones e l (x : xs) = do
   (xs0 , xs1) <- clones e l xs
   return (x0 : xs0 , x1 : xs1)
 
-subst :: Env -> Name -> Term -> IO ()
-subst e k v = modifyIORef' (env_sub_map e) (IM.insert k v)
+clone2 :: Env -> Lab -> (Term,Term) -> IO ((Term,Term),(Term,Term))
+clone2 e l (x,y) = do
+  (x0,x1) <- clone e l x
+  (y0,y1) <- clone e l y
+  return ((x0,y0),(x1,y1))
 
--- Cloning for Ref Logic
--- ---------------------
+clone2s :: Env -> Lab -> [(Term,Term)] -> IO ([(Term,Term)],[(Term,Term)])
+clone2s e l []         = return $ ([],[])
+clone2s e l (xy : xys) = do
+  (xy0  , xy1 ) <- clone2  e l xy
+  (xys0 , xys1) <- clone2s e l xys
+  return $ (xy0 : xys0, xy1 : xys1)
 
 clone_ref_stack :: Env -> Lab -> Stack -> IO (Stack, Stack)
 clone_ref_stack _ _ [] = do
@@ -929,29 +873,29 @@ wnf_dpn_dry d e s k l vf vx = do
 -- WNF: Ref
 -- --------
 
-wnf_ref_apply :: Env -> Semi -> Func -> Stack -> Subs -> Path -> IO Term
+wnf_ref_apply :: Env -> Semi -> Term -> Stack -> Subs -> Path -> IO Term
 wnf_ref_apply e sp func s m p = do
   when debug $ putStrLn $ "## wnf_ref_apply        : " ++ show (semi_term sp) ++ " " ++ show func
   case s of
     FDp0 k l : s' -> wnf_ref_dp0 e sp func s' m p k l
     FDp1 k l : s' -> wnf_ref_dp1 e sp func s' m p k l
     _ -> case func of
-      Abs k g   -> wnf_ref_abs e sp k g s m p
+      Lam k g   -> wnf_ref_lam e sp k g s m p
       Swi z sc  -> wnf_ref_swi e sp z sc s m p
-      Frk k a b -> wnf_ref_frk e sp k a b s m p
-      Del       -> wnf_ref_del e sp s m p
-      Ret t     -> wnf_ref_ret e sp t s m p
+      Sup k a b -> wnf_ref_sup e sp k a b s m p
+      Era       -> wnf_ref_del e sp s m p
+      _         -> wnf_ref_ret e sp func s m p
 
-wnf_ref_dp0 :: Env -> Semi -> Func -> Stack -> Subs -> Path -> Name -> Lab -> IO Term
+wnf_ref_dp0 :: Env -> Semi -> Term -> Stack -> Subs -> Path -> Name -> Lab -> IO Term
 wnf_ref_dp0 e sp func s m p _k l =
   wnf_ref_apply e sp func s m (p ++ [(l, 0)])
 
-wnf_ref_dp1 :: Env -> Semi -> Func -> Stack -> Subs -> Path -> Name -> Lab -> IO Term
+wnf_ref_dp1 :: Env -> Semi -> Term -> Stack -> Subs -> Path -> Name -> Lab -> IO Term
 wnf_ref_dp1 e sp func s m p _k l =
   wnf_ref_apply e sp func s m (p ++ [(l, 1)])
 
-wnf_ref_abs :: Env -> Semi -> Name -> Func -> Stack -> Subs -> Path -> IO Term
-wnf_ref_abs e sp k g s m p =
+wnf_ref_lam :: Env -> Semi -> Name -> Term -> Stack -> Subs -> Path -> IO Term
+wnf_ref_lam e sp k g s m p =
   case s of
     FApp a : s' -> do
       inc_inters e
@@ -959,9 +903,9 @@ wnf_ref_abs e sp k g s m p =
       let m' = IM.insert k a' m
       let sp' = semi_app sp (Var k)
       wnf_ref_apply e sp' g s' m' p
-    _ -> wnf_ref_stuck e sp s m p
+    _ -> wnf_ref_ret e sp (Lam k g) s m p
 
-wnf_ref_swi :: Env -> Semi -> Func -> Func -> Stack -> Subs -> Path -> IO Term
+wnf_ref_swi :: Env -> Semi -> Term -> Term -> Stack -> Subs -> Path -> IO Term
 wnf_ref_swi e sp z sc s m p =
   case s of
     FApp t : s' -> do
@@ -986,10 +930,10 @@ wnf_ref_swi e sp z sc s m p =
           return Era
         _ -> do
           wnf_ref_stuck e sp (FApp t_val : s') m p
-    _ -> wnf_ref_stuck e sp s m p
+    _ -> wnf_ref_ret e sp (Swi z sc) s m p
 
-wnf_ref_frk :: Env -> Semi -> Lab -> Func -> Func -> Stack -> Subs -> Path -> IO Term
-wnf_ref_frk e sp k a b s m p =
+wnf_ref_sup :: Env -> Semi -> Lab -> Term -> Term -> Stack -> Subs -> Path -> IO Term
+wnf_ref_sup e sp k a b s m p =
   case lookup_path k p of
     Just 0 -> do
       let p' = remove_path k p
@@ -1007,12 +951,6 @@ wnf_ref_frk e sp k a b s m p =
 wnf_ref_del :: Env -> Semi -> Stack -> Subs -> Path -> IO Term
 wnf_ref_del _e _sp _s _m _p = return Era
 
--- wnf_ref_ret :: Env -> Semi -> Term -> Stack -> Subs -> Path -> IO Term
--- wnf_ref_ret e _sp t s m p = do
-  -- t <- alloc e m t
-  -- t <- wnf_unwind e s t
-  -- wnf_ref_wrap e t p
-
 wnf_ref_ret :: Env -> Semi -> Term -> Stack -> Subs -> Path -> IO Term
 wnf_ref_ret e _sp t s m p = do
   t <- alloc e m t
@@ -1027,15 +965,10 @@ lookup_path k = go Nothing where
     | otherwise = go acc ps
 
 remove_path :: Lab -> Path -> Path
-remove_path k p = snd (go p) where
-  go [] = (False, [])
-  go ((l,d):ps) =
-    let (removed, ps') = go ps in
-    if removed
-      then (True, (l,d) : ps')
-      else if k == l
-            then (True, ps')
-            else (False, (l,d) : ps')
+remove_path k p =
+  case break ((== k) . fst) (reverse p) of
+    (_, [])    -> p
+    (xs, _:ys) -> reverse (xs ++ ys)
 
 wnf_ref_stuck :: Env -> Semi -> Stack -> Subs -> Path -> IO Term
 wnf_ref_stuck e sp s m p = do
@@ -1136,6 +1069,11 @@ alloc_term e holders subs term = case term of
     x' <- alloc_term e holders subs x
     return (Dry f' x')
 
+  Swi z s -> do
+    z' <- alloc_term e holders subs z
+    s' <- alloc_term e holders subs s
+    return (Swi z' s')
+
 alloc_var :: Env -> Holders -> Name -> Int -> Term -> IO Term
 alloc_var e holders k tag v = do
   hs <- readIORef holders
@@ -1204,6 +1142,10 @@ snf e d x = do
     Suc p -> do
       p <- snf e d p
       return (Suc p)
+    Swi z s -> do
+      z <- snf e d z
+      s <- snf e d s
+      return (Swi z s)
     Ref k -> do
       return (Ref k)
     Nam k -> do
@@ -1248,6 +1190,10 @@ col e x = do
       pV <- fresh e
       p' <- col e p
       inj e (Lam pV (Suc (Var pV))) [p']
+    Swi z s -> do
+      z' <- col e z
+      s' <- col e s
+      return (Swi z' s')
     Nam n -> return $ Nam n
     Dry f x1 -> do
       fV <- fresh e
@@ -1270,8 +1216,437 @@ inj e f (x : xs) = do
     x'' -> inj e (App f x'') xs
 inj _ f [] = return f
 
+-- Equality
+-- ========
+
+equal :: Env -> Int -> Term -> Term -> IO Bool
+equal e d a b = do
+  !a <- wnf e [] a
+  !b <- wnf e [] b
+  case (a, b) of
+    (Sup l a1 a2, _) -> do
+      (b1, b2) <- clone e l b
+      e1 <- equal e d a1 b1
+      e2 <- equal e d a2 b2
+      return (e1 && e2)
+    (_, Sup l b1 b2) -> do
+      (a1, a2) <- clone e l a
+      e1 <- equal e d a1 b1
+      e2 <- equal e d a2 b2
+      return (e1 && e2)
+    (Era, Era) -> do
+      return True
+    (Set, Set) -> do
+      return True
+    (All a1 a2, All b1 b2) -> do
+      e1 <- equal e d a1 b1
+      e2 <- equal e d a2 b2
+      return (e1 && e2)
+    (Lam k1 f1, Lam k2 f2) -> do
+      let nam = Nam (int_to_name d)
+      subst e k1 nam
+      subst e k2 nam
+      equal e (d + 1) f1 f2
+    (App f1 x1, App f2 x2) -> do
+      ef <- equal e d f1 f2
+      ex <- equal e d x1 x2
+      return (ef && ex)
+    (Nat, Nat) -> do
+      return True
+    (Zer, Zer) -> do
+      return True
+    (Suc a1, Suc b1) -> do
+      equal e d a1 b1
+    (Swi z1 s1, Swi z2 s2) -> do
+      ez <- equal e d z1 z2
+      es <- equal e d s1 s2
+      return (ez && es)
+    (Ref k1, Ref k2) -> do
+      return (k1 == k2)
+    (Nam n1, Nam n2) -> do
+      return (n1 == n2)
+    (Dry f1 x1, Dry f2 x2) -> do
+      ef <- equal e d f1 f2
+      ex <- equal e d x1 x2
+      return (ef && ex)
+    (Var _, _) -> error "equal: unexpected Var"
+    (_, Var _) -> error "equal: unexpected Var"
+    (Dp0 _, _) -> error "equal: unexpected Dp0"
+    (_, Dp0 _) -> error "equal: unexpected Dp0"
+    (Dp1 _, _) -> error "equal: unexpected Dp1"
+    (_, Dp1 _) -> error "equal: unexpected Dp1"
+    _ -> do return False
+
+-- SupGen
+-- ======
+
+max_elim :: Int
+max_elim = 2
+
+max_intr :: Int
+max_intr = 2
+
+rec_intr :: Int
+rec_intr = 1
+
+-- e: Env    = environment
+-- l: Int    = label (for forking the search space)
+-- d: Int    = depth (lam binders, used for internal variable names)
+-- k: Int    = budget (max_elim/intr)
+-- t: Term   = goal type
+-- s: Semi   = spine/lhs (represented as application chain)
+-- f: [Term] = folds (list of spines eligible for recursion)
+-- r: Ann    = recursion (the function itself)
+-- b: [Ann]  = library (external fns)
+-- c: [Ann]  = context (internal vars)
+
+type Ann   = (Term,Term)
+type Gen a = Env -> Int -> Int -> Int -> Term -> Semi -> [Term] -> Ann -> [Ann] -> [Ann] -> IO a
+
+-- Utils for SupGen
+-- ----------------
+
+sp0 :: Int -> Int
+sp0 x = (x * 16293 + 1) `mod` 65536
+
+sp1 :: Int -> Int
+sp1 x = (x * 32677 + 3) `mod` 65536
+
+-- Helper function to extract arguments from a spine Term (application chain).
+-- Corresponds to Term/LHS/to_list in Bend.
+lhs_to_list :: Term -> [Term]
+lhs_to_list tm = reverse (go tm [])
+  where go (App f x) acc = go f (x:acc)
+        go _ acc = acc
+
+-- Folding
+-- -------
+
+-- def Term/gen/Fol/arg(...) -> Term/gen/Fol:
+-- Applies arg to each spine in fol.
+gen_fol_arg :: Env -> [Term] -> Term -> IO [Term]
+gen_fol_arg e f arg = do -- FIXME: this is using arg non linearly
+  return $ map (\rxs -> App rxs arg) f
+
+-- Pattern-Matcher (LHS)
+-- ---------------------
+
+-- def Term/gen/lam(...) -> Term:
+gen_lam :: Gen Term
+gen_lam e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam :: " ++ show t
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (t0, t1) <- clone   e tl t
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam e l d k t0 s f0 r0 b0 c0
+      -- fork1    <- gen_lam e l d k t1 s f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      gen_lam_all e l d k t_wnf s f r b c
+    t' -> do
+      gen_body e l d k t' s f r b c
+
+-- def Term/gen/lam/all(...) -> Term:
+gen_lam_all :: Gen Term
+gen_lam_all e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_all :: " ++ show t
+  -- In Bend, this function checks if A is frozen. We skip that distinction here.
+  gen_lam_all_try e l d k t s f r b c
+
+-- def Term/gen/lam/all/try(...) -> Term:
+gen_lam_all_try :: Gen Term
+gen_lam_all_try e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_all_try (K=" ++ show k ++ ")"
+  if k == 0 then do
+    gen_lam_var e l d 0 t s f r b c
+  else do
+    (t0, t1) <- clone   e l t
+    (f0, f1) <- clones  e l f
+    (r0, r1) <- clone2  e l r
+    (b0, b1) <- clone2s e l b
+    (c0, c1) <- clone2s e l c
+    fork0    <- gen_lam_var e (sp0 l) d k     t0 s f0 r0 b0 c0
+    fork1    <- gen_lam_mat e (sp1 l) d (k-1) t1 s f1 r1 b1 c1
+    return $ Sup l fork0 fork1
+
+-- def Term/gen/lam/var(...) -> Term:
+gen_lam_var :: Gen Term
+gen_lam_var e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_var"
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam_var e l d k t0 s f0 r0 b0 c0
+      -- fork1    <- gen_lam_var e l d k t1 s f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    (All ta tb) -> do
+      x  <- fresh e
+      xv <- return $ Nam (int_to_name d)
+      s' <- return $ semi_app s xv
+      f' <- gen_fol_arg e f xv
+      c' <- return $ c ++ [(xv, ta)]
+      t' <- return $ App tb xv
+      fn <- gen_lam e l (d + 1) k t' s' f' r b c'
+      return $ Lam x fn
+    _ -> do
+      return Era -- Cannot introduce lambda if type is not All.
+
+gen_lam_mat :: Gen Term
+gen_lam_mat e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_lam_mat"
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_lam_mat e l d k t0 s f0 r0 b0 c0
+      -- fork1    <- gen_lam_mat e l d k t1 s f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      !a_wnf <- wnf e [] ta
+      case a_wnf of
+        Era -> do
+          return Era
+        Sup tl a0 a1 -> do
+          error "TODO"
+          -- (f0, f1)   <- clones  e tl f
+          -- (r0, r1)   <- clone2  e tl r
+          -- (b0, b1)   <- clone2s e tl b
+          -- (c0, c1)   <- clone2s e tl c
+          -- (tb0, tb1) <- clone   e tl tb
+          -- fork0      <- gen_lam_mat e l d k (All a0 tb0) s f0 r0 b0 c0
+          -- fork1      <- gen_lam_mat e l d k (All a1 tb1) s f1 r1 b1 c1
+          -- return $ Sup tl fork0 fork1
+        Nat -> do
+          -- Clones due to truly duplicated usage (not a fork)
+          (tb0, tb1) <- clone   e 0 tb
+          (f0, f1)   <- clones  e 0 f
+          (r0, r1)   <- clone2  e 0 r
+          (b0, b1)   <- clone2s e 0 b
+          (c0, c1)   <- clone2s e 0 c
+          n          <- fresh e
+          m          <- fresh e
+          p          <- fresh e
+          z_t        <- return $ App tb0 Zer
+          z_s        <- return $ semi_app s Zer
+          z_f        <- gen_fol_arg e f0 Zer
+          z_x        <- gen_lam e (sp0 l) d k z_t z_s z_f r0 b0 c0
+          s_t        <- return $ All Nat (Lam n (App tb1 (Suc (Var n))))
+          s_s        <- return $ semi_ctr s
+          s_f        <- return $ App (semi_term s) (Lam p (Var p)) : f1
+          s_x        <- gen_lam e (sp1 l) d k s_t s_s s_f r1 b1 c1
+          return $ Swi z_x s_x
+        _ -> do -- Cannot match on this argument type.
+          return Era
+    _ -> do -- Cannot match if type is not All.
+      return Era
+
+-- def Term/gen/body(...) -> Term:
+gen_body :: Gen Term
+gen_body e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_body :: " ++ show t
+  gen_expr e l d max_intr t s f r b c
+
+-- Enumerator (RHS)
+-- ----------------
+
+-- def Term/gen/expr(...) -> Term:
+gen_expr :: Gen Term
+gen_expr e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_expr (K=" ++ show k ++ ") :: " ++ show t
+  if k == 0 then do
+    return Zer
+    -- gen_pick e l d 0 t s f r b c
+  else do
+    (t0, t1) <- clone   e l t
+    (f0, f1) <- clones  e l f
+    (r0, r1) <- clone2  e l r
+    (b0, b1) <- clone2s e l b
+    (c0, c1) <- clone2s e l c
+    fork0    <- gen_intr e (sp0 l) d (k-1) t0 s f0 r0 b0 c0
+    -- fork0    <- return $ Zer
+    fork1    <- gen_pick e (sp1 l) d k t1 s f1 r1 b1 c1
+    -- fork1    <- return $ Zer
+    return $ Sup l fork0 fork1
+
+-- Introduce Constructor
+-- ---------------------
+
+-- def Term/gen/intr(...) -> Term:
+gen_intr :: Gen Term
+gen_intr e l d k t s f r b c = do
+  when debug $ putStrLn $ "gen_intr (K=" ++ show k ++ ") :: " ++ show t
+  !t_wnf <- wnf e [] t
+  case t_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (f0, f1) <- clones  e tl f
+      -- (r0, r1) <- clone2  e tl r
+      -- (b0, b1) <- clone2s e tl b
+      -- (c0, c1) <- clone2s e tl c
+      -- fork0    <- gen_intr e l d k t0 s f0 r0 b0 c0
+      -- fork1    <- gen_intr e l d k t1 s f1 r1 b1 c1
+      -- return $ Sup tl fork0 fork1
+    Nat -> do
+      (f0, f1) <- clones  e l f
+      (r0, r1) <- clone2  e l r
+      (b0, b1) <- clone2s e l b
+      (c0, c1) <- clone2s e l c
+      fork0    <- return $ Zer
+      pred     <- gen_expr e (sp1 l) d k Nat s f1 r1 b1 c1
+      fork1    <- return $ Suc pred
+      return $ Sup l fork0 fork1
+    All ta tb -> do
+      error "TODO"
+    _ -> do
+      return Era -- Cannot introduce constructor for this type.
+
+-- Pick (Elimination/Application)
+-- ------------------------------
+
+gen_pick :: Gen Term
+gen_pick e l d k t s f r b c = do
+  gen_pick_lib e l d k t s f r b c
+
+gen_pick_lib :: Gen Term
+gen_pick_lib e l d k t s f r b c = do
+  case b of
+    [] -> do
+      gen_pick_fol e l d k t s f r [] c
+    ((tm, ty) : bs) -> do
+      (t0, t1)   <- clone   e l t
+      (f0, f1)   <- clones  e l f
+      (r0, r1)   <- clone2  e l r
+      (c0, c1)   <- clone2s e l c
+      (bs0, bs1) <- clone2s e l bs
+      fork0      <- gen_call e (sp0 l) d k t0 s f0 r0 bs0 c0 tm ty
+      fork1      <- gen_pick_lib e (sp1 l) d k t1 s f1 r1 bs1 c1
+      return $ Sup l fork0 fork1
+
+gen_pick_fol :: Gen Term
+gen_pick_fol e l d k t s f r b c = do
+  case f of
+    [] -> do
+      gen_pick_ctx e l d k t s [] r b c
+    (rxs : fs) -> do
+      (t0, t1)     <- clone   e l t
+      (b0, b1)     <- clone2s e l b
+      (c0, c1)     <- clone2s e l c
+      (r0, r1)     <- clone2  e l r
+      (fs0, fs1)   <- clones  e l fs
+      (tm0, ty0)   <- return $ r0
+      (tm0A, tm0B) <- clone e l tm0
+      (ty0A, ty0B) <- clone e l ty0
+      fork0        <- gen_fold e (sp0 l) d k t0 s [] (tm0A,ty0A) b0 c0 (lhs_to_list rxs) tm0B ty0B
+      fork1        <- gen_pick_fol e (sp1 l) d k t1 s fs1 r1 b1 c1
+      return $ Sup l fork0 fork1
+
+gen_pick_ctx :: Gen Term
+gen_pick_ctx e l d k t s f r b c = do
+  case c of
+    [] -> do
+      return Era
+    [(tm, ty)] -> do
+      gen_call e l d k t s f r b [] tm ty
+    ((tm, ty) : cs) -> do
+      (t0, t1)   <- clone   e l t
+      (f0, f1)   <- clones  e l f
+      (r0, r1)   <- clone2  e l r
+      (b0, b1)   <- clone2s e l b
+      (cs0, cs1) <- clone2s e l cs
+      fork0      <- gen_call e (sp0 l) d k t0 s f0 r0 b0 cs0 tm ty
+      fork1      <- gen_pick_ctx e (sp1 l) d k t1 s f1 r1 b1 cs1
+      return $ Sup l fork0 fork1
+
+-- Callers
+-- -------
+
+-- def Term/gen/fold(...) -> Term:
+gen_fold :: Env -> Int -> Int -> Int -> Term -> Semi -> [Term] -> Ann -> [Ann] -> [Ann] -> [Term] -> Term -> Term -> IO Term
+gen_fold e l d k t s f r b c args tm ty = do
+  case args of
+    [] -> do
+      gen_call e l d rec_intr t s f r b c tm ty
+    (arg : args_rest) -> do
+      !ty_wnf <- wnf e [] ty
+      case ty_wnf of
+        Era -> do
+          return Era
+        Sup tl t0 t1 -> do
+          error "TODO"
+        All ta tb -> do
+          let tm' = App tm arg
+          let ty' = App tb arg
+          gen_fold e l d k t s f r b c args_rest tm' ty'
+        _ -> do
+          return Era -- Type mismatch: expected All type.
+
+gen_call :: Env -> Int -> Int -> Int -> Term -> Semi -> [Term] -> Ann -> [Ann] -> [Ann] -> Term -> Term -> IO Term
+gen_call e l d k t s f r b c tm ty = do
+  when debug $ putStrLn $ "gen_call (K=" ++ show k ++ ") :: " ++ show tm ++ " : " ++ show ty ++ " |- " ++ show t
+  !ty_wnf <- wnf e [] ty
+  case ty_wnf of
+    Era -> do
+      return Era
+    Sup tl t0 t1 -> do
+      error "TODO"
+      -- (t0, t1)   <- clone   e tl t
+      -- (f0, f1)   <- clones  e tl f
+      -- (r0, r1)   <- clone2  e tl r
+      -- (b0, b1)   <- clone2s e tl b
+      -- (c0, c1)   <- clone2s e tl c
+      -- (tm0, tm1) <- clone   e tl tm
+      -- fork0      <- gen_call e l d k t0 s f0 r0 b0 c0 tm0 ty0
+      -- fork1      <- gen_call e l d k t1 s f1 r1 b1 c1 tm1 ty1
+      -- return $ Sup tl fork0 fork1
+    All ta tb -> do
+      (f0, f1) <- clones  e l f
+      (r0, r1) <- clone2  e l r
+      (b0, b1) <- clone2s e l b
+      (c0, c1) <- clone2s e l c
+      arg      <- gen_expr e (sp0 l) d k ta s f0 r0 b0 c0
+      let tm'  = App tm arg
+      let ty'  = App tb arg
+      fun <- gen_call e (sp1 l) d k t s f1 r1 b1 c1 tm' ty'
+      return fun
+    ty -> do
+      eq <- equal e d ty t
+      if eq then do
+        return tm
+      else do
+        return Era
+
 -- Main
 -- ====
+
+flatten :: Term -> [Term]
+flatten term = bfs [term] [] where
+  bfs []     acc = reverse acc
+  bfs (t:ts) acc = case t of
+    Sup _ a b -> bfs (ts ++ [a, b]) acc
+    _         -> bfs ts (t : acc)
 
 f :: Int -> String
 f n = "λf." ++ dups ++ final where
@@ -1319,15 +1694,15 @@ tests =
 book :: String
 book = unlines
   [ ""
-  , "@id  = Λa.a"
-  , "@dup = Λx. λt. (t x x)"
-  , "@not = Λ{0:1+0;1+:Λp.0}"
-  , "@dbl = Λ{0:0;1+:Λp.2+(@dbl p)}"
-  , "@and = Λ{0:Λ{0:0;1+:Λp.0};1+:Λp.Λ{0:0;1+:Λp.1+0}}"
-  , "@add = Λ{0:Λb.b;1+:Λa.Λb.1+(@add a b)}"
-  , "@sum = Λ{0:0;1+:Λp.1+(@add p (@sum p))}"
-  , "@foo = &L{Λx.x,Λ{0:0;1+:Λp.p}}"
-  -- , "@gen = !F&A=@gen &A{Λx.!X&B=x;&B{X₀,1+X₁},Λ{0:&C{0,1};1+:Λp.!G&D=F₁;!P&D=p;&D{(G₀ P₀),!H&E=G₁;!Q&E=P₁;1+&E{(H₀ Q₀),1+(H₁ Q₁)}}}}"
+  , "@id  = λa.a"
+  , "@dup = λx. λt. (t x x)"
+  , "@not = λ{0:1+0;1+:λp.0}"
+  , "@dbl = λ{0:0;1+:λp.2+(@dbl p)}"
+  , "@and = λ{0:λ{0:0;1+:λp.0};1+:λp.λ{0:0;1+:λp.1+0}}"
+  , "@add = λ{0:λb.b;1+:λa.λb.1+(@add a b)}"
+  , "@sum = λ{0:0;1+:λp.1+(@add p (@sum p))}"
+  , "@foo = &L{λx.x,λ{0:0;1+:λp.p}}"
+  -- , "@gen = !F&A=@gen &A{λx.!X&B=x;&B{X₀,1+X₁},λ{0:&C{0,1};1+:λp.!G&D=F₁;!P&D=p;&D{(G₀ P₀),!H&E=G₁;!Q&E=P₁;1+&E{(H₀ Q₀),1+(H₁ Q₁)}}}}"
   ]
 
 run :: String -> String -> IO ()
@@ -1360,3 +1735,11 @@ test = forM_ tests $ \ (src, expd) -> do
 
 main :: IO ()
 main = test
+-- main = do
+  -- !env <- new_env $ read_book book
+  -- !typ <- return $ All Nat (Lam 0 Nat)
+  -- !val <- gen_lam env 1 0 2 typ (semi_new 0) [] (Nam "F", typ) [] []
+  -- print $ val
+  -- !val <- return $ flatten val
+  -- forM_ val $ \ x -> do
+    -- print $ x
