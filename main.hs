@@ -1,5 +1,3 @@
-{-./gen.bend-}
-
 -- Calculus of Interactions
 -- ========================
 -- CoI is a term rewrite system for the following grammar:
@@ -690,56 +688,49 @@ wnf_enter e s f = do
   when debug $ putStrLn $ ">> wnf_enter            : " ++ show f
   wnf_unwind e s f
 
--- -- WNF: Unwind
--- -- -----------
+-- WNF: Unwind
+-- -----------
 
 wnf_unwind :: Env -> Stack -> Term -> IO Term
-wnf_unwind e []    v = return v
-wnf_unwind e (x:s) v = do
+wnf_unwind e []      v = return v
+wnf_unwind e (x : s) v = do
   when debug $ putStrLn $ ">> wnf_unwind           : " ++ show v
   case x of
-    FApp x -> case v of
-      Era          -> wnf_app_era e s x
-      Sup fl fa fb -> wnf_app_sup e s fl fa fb x
-      Set          -> wnf_app_set e s x
-      All va vb    -> wnf_app_all e s va vb x
-      Lam fk ff    -> wnf_app_lam e s fk ff x
-      Nat          -> wnf_app_nat e s x
-      Zer          -> wnf_app_zer e s x
-      Suc vp       -> wnf_app_suc e s vp x
-      Swi vz vs    -> wnf_app_swi e s vz vs x
-      Nam fk       -> wnf_app_nam e s fk x
-      Dry ff fx    -> wnf_app_dry e s ff fx x
-      Cal f g      -> wnf_app_cal e s f g x
-      f            -> wnf_unwind e s (App f x)
-    FDp0 k l -> case v of
-      Era          -> wnf_dpn_era e s k l          (Dp0 k)
-      Sup vl va vb -> wnf_dpn_sup e s k l vl va vb (Dp0 k)
-      Set          -> wnf_dpn_set e s k l          (Dp0 k)
-      All va vb    -> wnf_dpn_all e s k l va vb    (Dp0 k)
-      Lam vk vf    -> wnf_dpn_lam e s k l vk vf    (Dp0 k)
-      Nat          -> wnf_dpn_nat e s k l          (Dp0 k)
-      Zer          -> wnf_dpn_zer e s k l          (Dp0 k)
-      Suc vp       -> wnf_dpn_suc e s k l vp       (Dp0 k)
-      Swi vz vs    -> wnf_dpn_swi e s k l vz vs    (Dp0 k)
-      Nam vk       -> wnf_dpn_nam e s k l vk       (Dp0 k)
-      Dry vf vx    -> wnf_dpn_dry e s k l vf vx    (Dp0 k)
-      Cal vf vg    -> wnf_dpn_cal e s k l vf vg    (Dp0 k)
-      val          -> wnf_unwind  e s (Dup k l val (Dp0 k))
-    FDp1 k l -> case v of
-      Era          -> wnf_dpn_era e s k l          (Dp1 k)
-      Sup vl va vb -> wnf_dpn_sup e s k l vl va vb (Dp1 k)
-      Set          -> wnf_dpn_set e s k l          (Dp1 k)
-      All va vb    -> wnf_dpn_all e s k l va vb    (Dp1 k)
-      Lam vk vf    -> wnf_dpn_lam e s k l vk vf    (Dp1 k)
-      Nat          -> wnf_dpn_nat e s k l          (Dp1 k)
-      Zer          -> wnf_dpn_zer e s k l          (Dp1 k)
-      Suc vp       -> wnf_dpn_suc e s k l vp       (Dp1 k)
-      Swi vz vs    -> wnf_dpn_swi e s k l vz vs    (Dp1 k)
-      Nam n        -> wnf_dpn_nam e s k l n        (Dp1 k)
-      Dry vf vx    -> wnf_dpn_dry e s k l vf vx    (Dp1 k)
-      Cal vf vg    -> wnf_dpn_cal e s k l vf vg    (Dp1 k)
-      val          -> wnf_unwind  e s (Dup k l val (Dp1 k))
+    FApp a   -> wnf_app e s v a
+    FDp0 k l -> wnf_dpn e s v k l (Dp0 k)
+    FDp1 k l -> wnf_dpn e s v k l (Dp1 k)
+
+wnf_app :: Env -> Stack -> Term -> Term -> IO Term
+wnf_app e s f a = case f of
+  Era          -> wnf_app_era e s a
+  Sup fl fa fb -> wnf_app_sup e s fl fa fb a
+  Set          -> wnf_app_set e s a
+  All va vb    -> wnf_app_all e s va vb a
+  Lam fk ff    -> wnf_app_lam e s fk ff a
+  Nat          -> wnf_app_nat e s a
+  Zer          -> wnf_app_zer e s a
+  Suc vp       -> wnf_app_suc e s vp a
+  Swi vz vs    -> wnf_app_swi e s vz vs a
+  Nam fk       -> wnf_app_nam e s fk a
+  Dry ff fx    -> wnf_app_dry e s ff fx a
+  Cal ff fg    -> wnf_app_cal e s ff fg a
+  _            -> wnf_unwind e s (App f a)
+
+wnf_dpn :: Env -> Stack -> Term -> Name -> Lab -> Term -> IO Term
+wnf_dpn e s v k l t = case v of
+  Era          -> wnf_dpn_era e s k l t
+  Sup vl va vb -> wnf_dpn_sup e s k l vl va vb t
+  Set          -> wnf_dpn_set e s k l t
+  All va vb    -> wnf_dpn_all e s k l va vb t
+  Lam vk vf    -> wnf_dpn_lam e s k l vk vf t
+  Nat          -> wnf_dpn_nat e s k l t
+  Zer          -> wnf_dpn_zer e s k l t
+  Suc vp       -> wnf_dpn_suc e s k l vp t
+  Swi vz vs    -> wnf_dpn_swi e s k l vz vs t
+  Nam n        -> wnf_dpn_nam e s k l n t
+  Dry vf vx    -> wnf_dpn_dry e s k l vf vx t
+  Cal vf vg    -> wnf_dpn_cal e s k l vf vg t
+  _            -> wnf_unwind e s (Dup k l v t)
 
 -- WNF: Interactions
 -- -----------------
@@ -1252,33 +1243,33 @@ snf e d x = do
 -- Collapsing
 -- ==========
 
-col :: Env -> Term -> IO Term
-col e x = do
+collapse :: Env -> Term -> IO Term
+collapse e x = do
   !x <- wnf e [] x
   case x of
     Era -> do
       return Era
     (Sup l a b) -> do
-      a' <- col e a
-      b' <- col e b
+      a' <- collapse e a
+      b' <- collapse e b
       return $ Sup l a' b'
     Set -> do
       return Set
     All a b -> do
       aV <- fresh e
       bV <- fresh e
-      a' <- col e a
-      b' <- col e b
+      a' <- collapse e a
+      b' <- collapse e b
       inj e (Lam aV (Lam bV (All (Var aV) (Var bV)))) [a',b']
     (Lam k f) -> do
       fV <- fresh e
-      f' <- col e f
+      f' <- collapse e f
       inj e (Lam fV (Lam k (Var fV))) [f']
     (App f x) -> do
       fV <- fresh e
       xV <- fresh e
-      f' <- col e f
-      x' <- col e x
+      f' <- collapse e f
+      x' <- collapse e x
       inj e (Lam fV (Lam xV (App (Var fV) (Var xV)))) [f',x']
     Nat -> do
       return Nat
@@ -1286,24 +1277,24 @@ col e x = do
       return Zer
     (Suc p) -> do
       pV <- fresh e
-      p' <- col e p
+      p' <- collapse e p
       inj e (Lam pV (Suc (Var pV))) [p']
     (Swi z s) -> do
       zV <- fresh e
       sV <- fresh e
-      z' <- col e z
-      s' <- col e s
+      z' <- collapse e z
+      s' <- collapse e s
       inj e (Lam zV (Lam sV (Swi (Var zV) (Var sV)))) [z',s']
     Nam n -> do
       return $ Nam n
     Dry f x -> do
       fV <- fresh e
       xV <- fresh e
-      f' <- col e f
-      x' <- col e x
+      f' <- collapse e f
+      x' <- collapse e x
       inj e (Lam fV (Lam xV (Dry (Var fV) (Var xV)))) [f',x']
     (Cal f g) -> do 
-      col e g
+      collapse e g
     x -> do
       return $ x
 
@@ -1764,7 +1755,7 @@ run book_src term_src = do
   !env <- new_env $ read_book book_src
   !ini <- getCPUTime
   !val <- alloc env $ read_term term_src
-  !val <- col env val
+  !val <- collapse env val
   !val <- snf env 1 val
   !end <- getCPUTime
   !itr <- readIORef (env_inters env)
@@ -1778,7 +1769,7 @@ run book_src term_src = do
 test :: IO ()
 test = forM_ tests $ \ (src, exp) -> do
   env <- new_env $ read_book book
-  det <- col env $ read_term src
+  det <- collapse env $ read_term src
   det <- show <$> snf env 1 det
   if det == exp then do
     putStrLn $ "[PASS] " ++ src ++ " → " ++ det
@@ -1788,20 +1779,22 @@ test = forM_ tests $ \ (src, exp) -> do
     putStrLn $ "  - detected: " ++ det
 
 main :: IO ()
-main = do
-  !env <- new_env $ read_book book
-  !val <- gen_lam env 1 0 max_elim (All Nat (Lam 0 Nat)) (Lam 0 (Var 0)) [] (Nam "F", (All Nat (Lam 0 Nat))) [] []
-  -- !val <- col env val
-  -- !val <- snf env 1 val
-  -- !val <- return $ flatten val
-  print $ val
-  -- forM_ val $ \x ->
-    -- print x
+main = test
 
-  -- Print duplications map
-  !dup_map <- readIORef (env_dup_map env)
-  putStrLn $ show_dup_map dup_map
+-- main = do
+  -- !env <- new_env $ read_book book
+  -- -- !val <- gen_lam env 1 0 max_elim (All Nat (Lam 0 Nat)) (Lam 0 (Var 0)) [] (Nam "F", (All Nat (Lam 0 Nat))) [] []
+  -- !val <- alloc env $ read_term "@gen"
+  -- !val <- collapse env val
+  -- !val <- snf env 1 val
+  -- -- !val <- return $ flatten val
+  -- -- print $ val
+  -- forM_ [val] print
+
+  -- -- -- Print duplications map
+  -- -- !dup_map <- readIORef (env_dup_map env)
+  -- -- putStrLn $ show_dup_map dup_map
   
-  -- Print substitutions map
-  !sub_map <- readIORef (env_sub_map env)
-  putStrLn $ show_sub_map sub_map
+  -- -- -- Print substitutions map
+  -- -- !sub_map <- readIORef (env_sub_map env)
+  -- -- putStrLn $ show_sub_map sub_map
