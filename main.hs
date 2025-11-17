@@ -17,7 +17,7 @@
 -- | Zer ::= "0"
 -- | Suc ::= "1+"
 -- | Ref ::= "@" Name
--- | Cal ::= Term "~>" Term
+-- | Gua ::= Term "~>" Term
 --
 -- Where:
 -- - Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $
@@ -27,7 +27,7 @@
 -- - Variables are affine (they must occur at most once)
 -- - Variables range globally (they can occur anywhere)
 -- 
--- Interaction Table
+-- Core Interactions
 -- =================
 -- 
 -- ! X &L = &{}
@@ -115,11 +115,30 @@
 -- ----------------- app-sup
 -- ! A &L = a
 -- &L{(f A₀),(g A₁)}
---
+-- 
 -- (λx.f a)
 -- -------- app-lam
 -- x ← a
 -- f
+--
+-- (Λ{0:z;1+:s} &{})
+-- ----------------- app-swi-era
+-- &{}
+--
+-- (Λ{0:z;1+:s} &L{a,b})
+-- --------------------- app-swi-sup
+-- ! Z &L = z
+-- ! S &L = s
+-- &L{(Λ{0:Z₀;1+:S₀} a)
+--   ,(Λ{0:Z₁;1+:S₁} b)}
+--
+-- (Λ{0:z;1+:s} 1+n)
+-- ----------------- app-swi-suc
+-- (s n)
+--
+-- (Λ{0:z;1+:s} 0)
+-- --------------- app-swi-zer
+-- z
 --
 -- (.n a)
 -- ------ app-nam
@@ -129,28 +148,36 @@
 -- ---------- app-dry
 -- .(.(f x) a)
 --
+-- @foo
+-- ------------------ ref
+-- foo ~> Book["foo"]
+-- 
+-- Guarded Interactions
+-- ====================
+-- 
 -- ((f ~> &{}) a)
--- -------------- app-cal-era
+-- -------------- app-gua-era
 -- &{}
---
+
 -- ((f ~> &L{x,y}) a)
--- ------------------ app-cal-sup
+-- ------------------ app-gua-sup
+-- ! &L F = f
 -- ! F &L = f
 -- ! A &L = a
 -- &L{((F₀ ~> x) A₀)
 --   ,((F₁ ~> y) A₁)}
 --
 -- ((f ~> λx.g) a)
--- --------------- app-cal-lam
+-- --------------- app-gua-lam
 -- x ← a
 -- (f x) ~> g
 --
 -- ((f ~> Λ{0:z;1+:s}) &{})
--- ------------------------ app-cal-swi-era
+-- ------------------------ app-gua-swi-era
 -- &{}
 --
 -- ((f ~> Λ{0:z;1+:s}) &L{a,b})
--- ---------------------------- app-cal-swi-sup
+-- ---------------------------- app-gua-swi-sup
 -- ! F &L = f
 -- ! Z &L = z
 -- ! S &L = s
@@ -158,16 +185,12 @@
 --   ,((F₁ ~> Λ{0:Z₁;1+:S₁}) b)}
 --
 -- ((f ~> Λ{0:z;1+:s}) 1+n)
--- ------------------------ app-cal-swi-suc
+-- ------------------------ app-gua-swi-suc
 -- ((λp.(f 1+p) ~> s) n)
 --
 -- ((f ~> Λ{0:z;1+:s}) 0)
--- ---------------------- app-cal-swi-zer
+-- ---------------------- app-gua-swi-zer
 -- (f 0) ~> z
---
--- @foo
--- ------------------ ref
--- foo ~> Book["foo"]
 
 {-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -O2 #-}
@@ -207,7 +230,7 @@ data Term
   | Ref !Name
   | Nam !String
   | Dry !Term !Term
-  | Cal !Term !Term
+  | Gua !Term !Term
   deriving (Eq)
 
 data Kind
@@ -247,7 +270,7 @@ instance Show Term where
   show (Ref k)       = "@" ++ int_to_name k
   show (Nam k)       = k
   show (Dry f x)     = show_app f [x]
-  show (Cal f g)     = show f ++ "~>" ++ show g
+  show (Gua f g)     = show f ++ "~>" ++ show g
 
 show_add :: Int -> Term -> String
 show_add n (Suc p) = show_add (n + 1) p
@@ -565,11 +588,11 @@ wnf_enter e s (Ref k) = do
     Just f  -> do
       inc_inters e
       g <- alloc e f
-      wnf_enter e s (Cal (Nam ("@" ++ int_to_name k)) g)
+      wnf_enter e s (Gua (Nam ("@" ++ int_to_name k)) g)
     Nothing -> error $ "UndefinedReference: " ++ int_to_name k
 
-wnf_enter e s (Cal f g) = do
-  wnf_unwind e s (Cal f g)
+wnf_enter e s (Gua f g) = do
+  wnf_unwind e s (Gua f g)
 
 wnf_enter e s f = do
   wnf_unwind e s f
@@ -590,10 +613,10 @@ wnf_app e s f a = case f of
   Era       -> wnf_app_era e s f a
   Sup {}    -> wnf_app_sup e s f a
   Lam {}    -> wnf_app_lam e s f a
-  Swi {}    -> error "TODO"
+  Swi {}    -> wnf_app_swi e s f a
   Nam {}    -> wnf_app_nam e s f a
   Dry {}    -> wnf_app_dry e s f a
-  Cal {}    -> wnf_app_cal e s f a
+  Gua {}    -> wnf_app_cal e s f a
   Set       -> error "wnf_app_set"
   All {}    -> error "wnf_app_all"
   Nat       -> error "wnf_app_nat"
@@ -614,7 +637,7 @@ wnf_dup e s v k l t = case v of
   Swi {} -> wnf_dup_swi e s v k l t
   Nam {} -> wnf_dup_nam e s v k l t
   Dry {} -> wnf_dup_dry e s v k l t
-  Cal {} -> wnf_dup_cal e s v k l t
+  Gua {} -> wnf_dup_cal e s v k l t
   _      -> wnf_unwind e s (Dup k l v t)
 
 -- WNF: Sub Interaction
@@ -651,6 +674,40 @@ wnf_app_lam e s (Lam fx ff) v = do
   inc_inters e
   subst VAR e fx v
   wnf e s ff
+
+wnf_app_swi :: WnfApp
+wnf_app_swi e s f@(Swi z sc) a = do
+  !a_wnf <- wnf e [] a
+  case a_wnf of
+    Era    -> wnf_app_swi_era e s f a_wnf
+    Sup {} -> wnf_app_swi_sup e s f a_wnf
+    Zer    -> wnf_app_swi_zer e s f a_wnf
+    Suc {} -> wnf_app_swi_suc e s f a_wnf
+    _      -> wnf_unwind e s (App f a_wnf)
+
+wnf_app_swi_era :: WnfApp
+wnf_app_swi_era e s (Swi z sc) Era = do
+  inc_inters e
+  wnf e s Era
+
+wnf_app_swi_sup :: WnfApp
+wnf_app_swi_sup e s (Swi z sc) (Sup l a b) = do
+  inc_inters e
+  (z0, z1) <- clone e l z
+  (s0, s1) <- clone e l sc
+  let app0 = App (Swi z0 s0) a
+  let app1 = App (Swi z1 s1) b
+  wnf_enter e s (Sup l app0 app1)
+
+wnf_app_swi_zer :: WnfApp
+wnf_app_swi_zer e s (Swi z sc) Zer = do
+  inc_inters e
+  wnf e s z
+
+wnf_app_swi_suc :: WnfApp
+wnf_app_swi_suc e s (Swi z sc) (Suc n) = do
+  inc_inters e
+  wnf_enter e s (App sc n)
 
 wnf_app_sup :: WnfApp
 wnf_app_sup e s (Sup fL fa fb) v = do
@@ -738,10 +795,10 @@ wnf_dup_dry e s (Dry vf vx) k l t = wnf_dup_2 e s k l t vf vx Dry
 -- WNF: Deref Interactions
 -- -----------------------
 
-type WnfAppCal = Env -> Stack -> Term -> Term -> Term -> IO Term
+type WnfAppGua = Env -> Stack -> Term -> Term -> Term -> IO Term
 
 wnf_app_cal :: Env -> Stack -> Term -> Term -> IO Term
-wnf_app_cal e s (Cal f g) a = do
+wnf_app_cal e s (Gua f g) a = do
   !g_wnf <- wnf e [] g
   case g_wnf of
     Era    -> wnf_app_cal_era e s f g_wnf a
@@ -755,30 +812,30 @@ wnf_app_cal e s (Cal f g) a = do
     Suc {} -> error "wnf_app_cal_suc"
     Nam {} -> error "wnf_app_cal_nam"
     Dry {} -> error "wnf_app_cal_dry"
-    Cal {} -> error "wnf_app_cal_cal"
-    _      -> wnf_unwind e s (App (Cal f g_wnf) a)
+    Gua {} -> error "wnf_app_cal_cal"
+    _      -> wnf_unwind e s (App (Gua f g_wnf) a)
 
-wnf_app_cal_era :: WnfAppCal
+wnf_app_cal_era :: WnfAppGua
 wnf_app_cal_era e s f Era a = do
   inc_inters e
   wnf e s Era
 
-wnf_app_cal_sup :: WnfAppCal
+wnf_app_cal_sup :: WnfAppGua
 wnf_app_cal_sup e s f (Sup l x y) a = do
   inc_inters e
   (f0,f1) <- clone e l f
   (a0,a1) <- clone e l a
-  let app0 = (App (Cal f0 x) a0)
-  let app1 = (App (Cal f1 y) a1)
+  let app0 = (App (Gua f0 x) a0)
+  let app1 = (App (Gua f1 y) a1)
   wnf_enter e s (Sup l app0 app1)
 
-wnf_app_cal_lam :: WnfAppCal
+wnf_app_cal_lam :: WnfAppGua
 wnf_app_cal_lam e s f (Lam x g) a = do
   inc_inters e
   subst VAR e x a
-  wnf_enter e s (Cal (App f (Var x)) g)
+  wnf_enter e s (Gua (App f (Var x)) g)
 
-wnf_app_cal_swi :: WnfAppCal
+wnf_app_cal_swi :: WnfAppGua
 wnf_app_cal_swi e s f (Swi z sc) a = do
   !a_wnf <- wnf e [] a
   case a_wnf of
@@ -793,39 +850,39 @@ wnf_app_cal_swi e s f (Swi z sc) a = do
     Swi {} -> error "wnf_app_cal_swi_swi"
     Nam {} -> error "wnf_app_cal_swi_nam"
     Dry {} -> error "wnf_app_cal_swi_dry"
-    Cal {} -> error "wnf_app_cal_swi_cal"
+    Gua {} -> error "wnf_app_cal_swi_cal"
     a      -> wnf_unwind e s (App f a)
 
-type WnfAppCalSwi = Env -> Stack -> Term -> Term -> Term -> Term -> IO Term
+type WnfAppGuaSwi = Env -> Stack -> Term -> Term -> Term -> Term -> IO Term
 
-wnf_app_cal_swi_era :: WnfAppCalSwi
+wnf_app_cal_swi_era :: WnfAppGuaSwi
 wnf_app_cal_swi_era e s f z sc Era = do
   wnf_enter e s Era
 
-wnf_app_cal_swi_sup :: WnfAppCalSwi
+wnf_app_cal_swi_sup :: WnfAppGuaSwi
 wnf_app_cal_swi_sup e s f z sc (Sup l a b) = do
   inc_inters e
   (f0,f1) <- clone e l f
   (z0,z1) <- clone e l z
   (s0,s1) <- clone e l sc
-  let app0 = App (Cal f0 (Swi z0 s0)) a
-  let app1 = App (Cal f1 (Swi z1 s1)) b
+  let app0 = App (Gua f0 (Swi z0 s0)) a
+  let app1 = App (Gua f1 (Swi z1 s1)) b
   wnf_enter e s (Sup l app0 app1)
 
-wnf_app_cal_swi_zer :: WnfAppCalSwi
+wnf_app_cal_swi_zer :: WnfAppGuaSwi
 wnf_app_cal_swi_zer e s f z sc Zer = do
   inc_inters e
-  wnf_enter e s (Cal (App f Zer) z)
+  wnf_enter e s (Gua (App f Zer) z)
 
-wnf_app_cal_swi_suc :: WnfAppCalSwi
+wnf_app_cal_swi_suc :: WnfAppGuaSwi
 wnf_app_cal_swi_suc e s f z sc (Suc n) = do
   inc_inters e
   p <- fresh e
   let fn = (Lam p (App f (Suc (Var p))))
-  wnf_enter e s (App (Cal fn sc) n)
+  wnf_enter e s (App (Gua fn sc) n)
 
 wnf_dup_cal :: Env -> Stack -> Term -> Name -> Lab -> Term -> IO Term
-wnf_dup_cal e s (Cal f g) k l t = wnf_dup_2 e s k l t f g Cal
+wnf_dup_cal e s (Gua f g) k l t = wnf_dup_2 e s k l t f g Gua
 
 -- Allocation
 -- ==========
@@ -849,7 +906,7 @@ alloc e term = go IM.empty term where
   go _ (Ref k)       = return $ Ref k
   go _ (Nam k)       = return $ Nam k
   go m (Dry f x)     = Dry <$> go m f <*> go m x
-  go m (Cal f g)     = Cal <$> go m f <*> go m g
+  go m (Gua f g)     = Gua <$> go m f <*> go m g
   go m (Dup k l v t) = do
     k' <- fresh e
     v' <- go m v
@@ -918,7 +975,7 @@ snf e d x = do
       f' <- snf e d f
       x' <- snf e d x
       return $ Dry f' x'
-    Cal f g -> do
+    Gua f g -> do
       g' <- snf e d g
       return g'
 
@@ -975,7 +1032,7 @@ collapse e x = do
       f' <- collapse e f
       x' <- collapse e x
       inj e (Lam fV (Lam xV (Dry (Var fV) (Var xV)))) [f',x']
-    (Cal f g) -> do 
+    (Gua f g) -> do 
       collapse e g
     x -> do
       return $ x
