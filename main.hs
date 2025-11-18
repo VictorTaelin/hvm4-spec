@@ -2335,7 +2335,7 @@ tests =
   , ("(@MUL @C4 @C2 @NOT @T)", "λa.λb.a")
   , ("(@MUL @C4 @C4 @NOT @T)", "λa.λb.a")
   , ("(@EXP @C4 @K2)", "λa.λb.(a (a (a (a (a (a (a (a (a (a (a (a (a (a (a (a b))))))))))))))))")
-  , ("(@C8 @K8 λB.λT.λF.(B F T) λt.λf.t)", "λa.λb.a")
+  , ("(@C8 @K8 @NOT @T)", "λa.λb.a")
   ]
 
 run :: String -> String -> IO ()
