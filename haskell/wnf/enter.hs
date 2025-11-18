@@ -35,17 +35,9 @@ wnf_enter e s (Dup k l v t) = do
   make_dup e k l v
   wnf_enter e s t
 
--- wnf_ref
 wnf_enter e s (Ref k) = do
   when debug $ putStrLn $ "wnf_enter: " ++ show (Ref k)
-  let (Book m) = env_book e
-  case M.lookup k m of
-    Just f  -> do
-      inc_inters e
-      g <- alloc e f
-      wnf_enter e s g -- ← with this line: 162 interactions
-      -- wnf_enter e s (Gua (Nam ("@" ++ int_to_name k)) g) -- ← with this line: 765 interactions
-    Nothing -> error $ "UndefinedReference: " ++ int_to_name k
+  wnf_ref e s k
 
 wnf_enter e s (Gua f g) = do
   when debug $ putStrLn $ "wnf_enter: " ++ show (Gua f g)

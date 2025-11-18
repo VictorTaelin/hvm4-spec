@@ -1,3 +1,5 @@
+--[./../spec.md]
+
 {-# LANGUAGE BangPatterns, CPP #-}
 
 import Control.Monad (forM_, when)
@@ -80,42 +82,43 @@ data Env = Env
 -- =======
 
 instance Show Term where
-  show (Var k)       = int_to_name k
-  show (Dp0 k)       = int_to_name k ++ "₀"
-  show (Dp1 k)       = int_to_name k ++ "₁"
-  show (Ref k)       = "@" ++ int_to_name k
-  show (Nam k)       = k
-  show (Dry f x)     = show_app f [x]
-  show Era           = "&{}"
-  show (Sup l a b)   = "&" ++ int_to_name l ++ "{" ++ show a ++ "," ++ show b ++ "}"
-  show (Dup k l v t) = "!" ++ int_to_name k ++ "&" ++ int_to_name l ++ "=" ++ show v ++ ";" ++ show t
-  show Set           = "*"
-  show (All a b)     = "∀" ++ show a ++ "." ++ show b
-  show (Lam k f)     = "λ" ++ int_to_name k ++ "." ++ show f
-  show (App f x)     = show_app f [x]
-  show (Sig a b)     = "Σ" ++ show a ++ "." ++ show b
-  show (Tup a b)     = "(" ++ show a ++ "," ++ show b ++ ")"
-  show (Get c)       = "λ{,:" ++ show c ++ "}"
-  show Emp           = "⊥"
-  show Efq           = "λ{}"
-  show Uni           = "⊤"
-  show One           = "()"
-  show (Use u)       = "λ{():" ++ show u ++ "}"
-  show Bol           = "𝔹"
-  show Fal           = "#F"
-  show Tru           = "#T"
-  show (If f t)      = "λ{#F:" ++ show f ++ ";#T:" ++ show t ++ "}"
-  show Nat           = "ℕ"
-  show Zer           = "0"
-  show (Suc p)       = show_add 1 p
-  show (Swi z s)     = "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
-  show (Lst t)       = show t ++ "[]"
-  show Nil           = "[]"
-  show (Con h t)     = show h ++ "<>" ++ show t
-  show (Mat n c)     = "λ{[]:" ++ show n ++ ";<>:" ++ show c ++ "}"
-  show (And a b)     = show a ++ "&&" ++ show b
-  show (Eql a b)     = show a ++ "==" ++ show b
-  show (Gua f g)     = show f ++ "~>" ++ show g
+  show term = case term of
+    Var k       -> int_to_name k
+    Dp0 k       -> int_to_name k ++ "₀"
+    Dp1 k       -> int_to_name k ++ "₁"
+    Ref k       -> "@" ++ int_to_name k
+    Nam k       -> k
+    Dry f x     -> show_app f [x]
+    Era         -> "&{}"
+    Sup l a b   -> "&" ++ int_to_name l ++ "{" ++ show a ++ "," ++ show b ++ "}"
+    Dup k l v t -> "!" ++ int_to_name k ++ "&" ++ int_to_name l ++ "=" ++ show v ++ ";" ++ show t
+    Set         -> "*"
+    All a b     -> "∀" ++ show a ++ "." ++ show b
+    Lam k f     -> "λ" ++ int_to_name k ++ "." ++ show f
+    App f x     -> show_app f [x]
+    Sig a b     -> "Σ" ++ show a ++ "." ++ show b
+    Tup a b     -> "(" ++ show a ++ "," ++ show b ++ ")"
+    Get c       -> "λ{,:" ++ show c ++ "}"
+    Emp         -> "⊥"
+    Efq         -> "λ{}"
+    Uni         -> "⊤"
+    One         -> "()"
+    Use u       -> "λ{():" ++ show u ++ "}"
+    Bol         -> "𝔹"
+    Fal         -> "#F"
+    Tru         -> "#T"
+    If f t      -> "λ{#F:" ++ show f ++ ";#T:" ++ show t ++ "}"
+    Nat         -> "ℕ"
+    Zer         -> "0"
+    Suc p       -> show_add 1 p
+    Swi z s     -> "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
+    Lst t       -> show t ++ "[]"
+    Nil         -> "[]"
+    Con h t     -> show h ++ "<>" ++ show t
+    Mat n c     -> "λ{[]:" ++ show n ++ ";<>:" ++ show c ++ "}"
+    And a b     -> show a ++ "&&" ++ show b
+    Eql a b     -> show a ++ "==" ++ show b
+    Gua f g     -> show f ++ "~>" ++ show g
 
 show_add :: Int -> Term -> String
 show_add n Zer     = show n
@@ -164,12 +167,13 @@ lexeme p = skipSpaces *> p
 
 #include "./parse/name.hs"
 #include "./parse/term.hs"
-#include "./parse/term_suff.hs"
-#include "./parse/term_base.hs"
+#include "./parse/op_and.hs"
+#include "./parse/op_eql.hs"
+#include "./parse/op_gua.hs"
+#include "./parse/op_lst.hs"
+#include "./parse/op_con.hs"
 #include "./parse/par.hs"
-#include "./parse/lam_or_swi.hs"
-#include "./parse/lam_body.hs"
-#include "./parse/lam_brace.hs"
+#include "./parse/lam.hs"
 #include "./parse/dup.hs"
 #include "./parse/sup.hs"
 #include "./parse/era.hs"
@@ -187,7 +191,7 @@ lexeme p = skipSpaces *> p
 #include "./parse/bol.hs"
 #include "./parse/ctr.hs"
 #include "./parse/nil.hs"
-#include "./parse/nam_or_dry.hs"
+#include "./parse/nam.hs"
 #include "./parse/func.hs"
 #include "./parse/book.hs"
 
@@ -294,105 +298,10 @@ type WnfGuaSwi = Env -> Stack -> Term -> Term -> Term -> Term -> IO Term
 #include "./wnf/unwind.hs"
 #include "./wnf/sub.hs"
 #include "./wnf/dup.hs"
-#include "./wnf/dup_0.hs"
-#include "./wnf/dup_1.hs"
-#include "./wnf/dup_2.hs"
-#include "./wnf/dup_era.hs"
-#include "./wnf/dup_sup.hs"
-#include "./wnf/dup_set.hs"
-#include "./wnf/dup_all.hs"
-#include "./wnf/dup_lam.hs"
-#include "./wnf/dup_nat.hs"
-#include "./wnf/dup_zer.hs"
-#include "./wnf/dup_suc.hs"
-#include "./wnf/dup_swi.hs"
-#include "./wnf/dup_nam.hs"
-#include "./wnf/dup_dry.hs"
-#include "./wnf/dup_gua.hs"
-#include "./wnf/dup_sig.hs"
-#include "./wnf/dup_tup.hs"
-#include "./wnf/dup_get.hs"
-#include "./wnf/dup_emp.hs"
-#include "./wnf/dup_efq.hs"
-#include "./wnf/dup_uni.hs"
-#include "./wnf/dup_one.hs"
-#include "./wnf/dup_use.hs"
-#include "./wnf/dup_bol.hs"
-#include "./wnf/dup_fal.hs"
-#include "./wnf/dup_tru.hs"
-#include "./wnf/dup_if.hs"
-#include "./wnf/dup_lst.hs"
-#include "./wnf/dup_nil.hs"
-#include "./wnf/dup_con.hs"
-#include "./wnf/dup_mat.hs"
 #include "./wnf/app.hs"
-#include "./wnf/app_era.hs"
-#include "./wnf/app_nam.hs"
-#include "./wnf/app_dry.hs"
-#include "./wnf/app_lam.hs"
-#include "./wnf/app_sup.hs"
-#include "./wnf/app_f.hs"
-#include "./wnf/app_swi.hs"
-#include "./wnf/app_swi_era.hs"
-#include "./wnf/app_swi_sup.hs"
-#include "./wnf/app_swi_zer.hs"
-#include "./wnf/app_swi_suc.hs"
-#include "./wnf/app_get.hs"
-#include "./wnf/app_efq.hs"
-#include "./wnf/app_use.hs"
-#include "./wnf/app_if.hs"
-#include "./wnf/app_mat.hs"
 #include "./wnf/and.hs"
-#include "./wnf/and_era.hs"
-#include "./wnf/and_sup.hs"
-#include "./wnf/and_fal.hs"
-#include "./wnf/and_tru.hs"
 #include "./wnf/eql.hs"
-#include "./wnf/eql_val.hs"
-#include "./wnf/eql_set_set.hs"
-#include "./wnf/eql_all_all.hs"
-#include "./wnf/eql_lam_lam.hs"
-#include "./wnf/eql_sig_sig.hs"
-#include "./wnf/eql_tup_tup.hs"
-#include "./wnf/eql_get_get.hs"
-#include "./wnf/eql_emp_emp.hs"
-#include "./wnf/eql_efq_efq.hs"
-#include "./wnf/eql_uni_uni.hs"
-#include "./wnf/eql_one_one.hs"
-#include "./wnf/eql_use_use.hs"
-#include "./wnf/eql_bol_bol.hs"
-#include "./wnf/eql_fal_fal.hs"
-#include "./wnf/eql_tru_tru.hs"
-#include "./wnf/eql_fal_tru.hs"
-#include "./wnf/eql_tru_fal.hs"
-#include "./wnf/eql_if_if.hs"
-#include "./wnf/eql_nat_nat.hs"
-#include "./wnf/eql_zer_zer.hs"
-#include "./wnf/eql_suc_suc.hs"
-#include "./wnf/eql_swi_swi.hs"
-#include "./wnf/eql_lst_lst.hs"
-#include "./wnf/eql_nil_nil.hs"
-#include "./wnf/eql_con_con.hs"
-#include "./wnf/eql_mat_mat.hs"
-#include "./wnf/eql_nam_nam.hs"
-#include "./wnf/eql_dry_dry.hs"
-#include "./wnf/eql_default.hs"
-#include "./wnf/app_gua.hs"
-#include "./wnf/app_gua_era.hs"
-#include "./wnf/app_gua_sup.hs"
-#include "./wnf/app_gua_lam.hs"
-#include "./wnf/app_gua_gua.hs"
-#include "./wnf/app_gua_f.hs"
-#include "./wnf/app_gua_swi.hs"
-#include "./wnf/app_gua_swi_era.hs"
-#include "./wnf/app_gua_swi_sup.hs"
-#include "./wnf/app_gua_swi_zer.hs"
-#include "./wnf/app_gua_swi_suc.hs"
-#include "./wnf/app_gua_get.hs"
-#include "./wnf/app_gua_efq.hs"
-#include "./wnf/app_gua_use.hs"
-#include "./wnf/app_gua_if.hs"
-#include "./wnf/app_gua_mat.hs"
+#include "./wnf/ref.hs"
 
 -- Allocation
 -- ==========
@@ -837,4 +746,29 @@ main :: IO ()
 main = test
 
 
--- rename Term to Expr
+-- FEql b           -> wnf_enter e (FEqlA v : s) b
+-- FEqlA a          -> wnf_eql e s a v
+-- these lines are awkward. rename wnf_eql to wnf_eql_x, and make the FEql line
+-- use a wnf_eql function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
