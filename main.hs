@@ -82,43 +82,42 @@ data Env = Env
 -- =======
 
 instance Show Term where
-  show term = case term of
-    Var k       -> int_to_name k
-    Dp0 k       -> int_to_name k ++ "₀"
-    Dp1 k       -> int_to_name k ++ "₁"
-    Ref k       -> "@" ++ int_to_name k
-    Nam k       -> k
-    Dry f x     -> show_app f [x]
-    Era         -> "&{}"
-    Sup l a b   -> "&" ++ int_to_name l ++ "{" ++ show a ++ "," ++ show b ++ "}"
-    Dup k l v t -> "!" ++ int_to_name k ++ "&" ++ int_to_name l ++ "=" ++ show v ++ ";" ++ show t
-    Set         -> "*"
-    All a b     -> "∀" ++ show a ++ "." ++ show b
-    Lam k f     -> "λ" ++ int_to_name k ++ "." ++ show f
-    App f x     -> show_app f [x]
-    Sig a b     -> "Σ" ++ show a ++ "." ++ show b
-    Tup a b     -> "(" ++ show a ++ "," ++ show b ++ ")"
-    Get c       -> "λ{,:" ++ show c ++ "}"
-    Emp         -> "⊥"
-    Efq         -> "λ{}"
-    Uni         -> "⊤"
-    One         -> "()"
-    Use u       -> "λ{():" ++ show u ++ "}"
-    Bol         -> "𝔹"
-    Fal         -> "#F"
-    Tru         -> "#T"
-    If f t      -> "λ{#F:" ++ show f ++ ";#T:" ++ show t ++ "}"
-    Nat         -> "ℕ"
-    Zer         -> "0"
-    Suc p       -> show_add 1 p
-    Swi z s     -> "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
-    Lst t       -> show t ++ "[]"
-    Nil         -> "[]"
-    Con h t     -> show h ++ "<>" ++ show t
-    Mat n c     -> "λ{[]:" ++ show n ++ ";<>:" ++ show c ++ "}"
-    And a b     -> show a ++ "&&" ++ show b
-    Eql a b     -> show a ++ "==" ++ show b
-    Gua f g     -> show f ++ "~>" ++ show g
+  show (Var k)       = int_to_name k
+  show (Dp0 k)       = int_to_name k ++ "₀"
+  show (Dp1 k)       = int_to_name k ++ "₁"
+  show (Ref k)       = "@" ++ int_to_name k
+  show (Nam k)       = k
+  show (Dry f x)     = show_app f [x]
+  show Era           = "&{}"
+  show (Sup l a b)   = "&" ++ int_to_name l ++ "{" ++ show a ++ "," ++ show b ++ "}"
+  show (Dup k l v t) = "!" ++ int_to_name k ++ "&" ++ int_to_name l ++ "=" ++ show v ++ ";" ++ show t
+  show Set           = "*"
+  show (All a b)     = "∀" ++ show a ++ "." ++ show b
+  show (Lam k f)     = "λ" ++ int_to_name k ++ "." ++ show f
+  show (App f x)     = show_app f [x]
+  show (Sig a b)     = "Σ" ++ show a ++ "." ++ show b
+  show (Tup a b)     = "(" ++ show a ++ "," ++ show b ++ ")"
+  show (Get c)       = "λ{,:" ++ show c ++ "}"
+  show Emp           = "⊥"
+  show Efq           = "λ{}"
+  show Uni           = "⊤"
+  show One           = "()"
+  show (Use u)       = "λ{():" ++ show u ++ "}"
+  show Bol           = "𝔹"
+  show Fal           = "#F"
+  show Tru           = "#T"
+  show (If f t)      = "λ{#F:" ++ show f ++ ";#T:" ++ show t ++ "}"
+  show Nat           = "ℕ"
+  show Zer           = "0"
+  show (Suc p)       = show_add 1 p
+  show (Swi z s)     = "λ{0:" ++ show z ++ ";1+:" ++ show s ++ "}"
+  show (Lst t)       = show t ++ "[]"
+  show Nil           = "[]"
+  show (Con h t)     = show h ++ "<>" ++ show t
+  show (Mat n c)     = "λ{[]:" ++ show n ++ ";<>:" ++ show c ++ "}"
+  show (And a b)     = show a ++ "&&" ++ show b
+  show (Eql a b)     = show a ++ "==" ++ show b
+  show (Gua f g)     = show f ++ "~>" ++ show g
 
 show_add :: Int -> Term -> String
 show_add n Zer     = show n
