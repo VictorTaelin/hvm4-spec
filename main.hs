@@ -242,14 +242,35 @@ parse_par :: ReadP Term
 parse_par = do
   lexeme (char '(')
   choice
-    [ do lexeme (char ')'); return One
-    , do
-      t <- parse_term
-      choice
-        [ do lexeme (char ','); u <- parse_term; lexeme (char ')'); return (Tup t u)
-        , do ts <- many parse_term; lexeme (char ')'); return (foldl' App t ts)
-        ]
+    [ parse_par_one
+    , parse_par_term
     ]
+
+parse_par_one :: ReadP Term
+parse_par_one = do
+  lexeme (char ')')
+  return One
+
+parse_par_term :: ReadP Term
+parse_par_term = do
+  t <- parse_term
+  choice
+    [ parse_par_tup t
+    , parse_par_app t
+    ]
+
+parse_par_tup :: Term -> ReadP Term
+parse_par_tup t = do
+  lexeme (char ',')
+  u <- parse_term
+  lexeme (char ')')
+  return (Tup t u)
+
+parse_par_app :: Term -> ReadP Term
+parse_par_app t = do
+  ts <- many parse_term
+  lexeme (char ')')
+  return (foldl' App t ts)
 
 parse_lam_or_swi :: ReadP Term
 parse_lam_or_swi = do
@@ -437,9 +458,22 @@ parse_nam :: ReadP Term
 parse_nam = do
   lexeme (char '^')
   choice
-    [ do lexeme (char '('); f <- parse_term; x <- parse_term; lexeme (char ')'); return (Dry f x)
-    , do k <- parse_name; return (Nam k)
+    [ parse_nam_dry
+    , parse_nam_var
     ]
+
+parse_nam_dry :: ReadP Term
+parse_nam_dry = do
+  lexeme (char '(')
+  f <- parse_term
+  x <- parse_term
+  lexeme (char ')')
+  return (Dry f x)
+
+parse_nam_var :: ReadP Term
+parse_nam_var = do
+  k <- parse_name
+  return (Nam k)
 
 parse_func :: ReadP (Name, Term)
 parse_func = do
@@ -968,7 +1002,9 @@ wnf_app_gua_swi_suc e s f z sc (Suc n) = do
 
 wnf_app_gua_get :: Env -> Stack -> Term -> Term -> Term -> IO Term
 wnf_app_gua_get e s f (Get c) a = case a of
-  Era -> do { inc_inters e; wnf e s Era }
+  Era -> do
+    inc_inters e
+    wnf e s Era
   Sup l x y -> do
     inc_inters e
     (f0, f1) <- clone e l f
@@ -986,7 +1022,9 @@ wnf_app_gua_get e s f (Get c) a = case a of
 
 wnf_app_gua_efq :: Env -> Stack -> Term -> Term -> Term -> IO Term
 wnf_app_gua_efq e s f Efq a = case a of
-  Era -> do { inc_inters e; wnf e s Era }
+  Era -> do
+    inc_inters e
+    wnf e s Era
   Sup l x y -> do
     inc_inters e
     (f0, f1) <- clone e l f
@@ -997,7 +1035,9 @@ wnf_app_gua_efq e s f Efq a = case a of
 
 wnf_app_gua_use :: Env -> Stack -> Term -> Term -> Term -> IO Term
 wnf_app_gua_use e s f (Use u) a = case a of
-  Era -> do { inc_inters e; wnf e s Era }
+  Era -> do
+    inc_inters e
+    wnf e s Era
   Sup l x y -> do
     inc_inters e
     (f0, f1) <- clone e l f
@@ -1012,7 +1052,9 @@ wnf_app_gua_use e s f (Use u) a = case a of
 
 wnf_app_gua_if :: Env -> Stack -> Term -> Term -> Term -> IO Term
 wnf_app_gua_if e s f (If ft ff) a = case a of
-  Era -> do { inc_inters e; wnf e s Era }
+  Era -> do
+    inc_inters e
+    wnf e s Era
   Sup l x y -> do
     inc_inters e
     (f0, f1) <- clone e l f
@@ -1031,7 +1073,9 @@ wnf_app_gua_if e s f (If ft ff) a = case a of
 
 wnf_app_gua_mat :: Env -> Stack -> Term -> Term -> Term -> IO Term
 wnf_app_gua_mat e s f (Mat n c) a = case a of
-  Era -> do { inc_inters e; wnf e s Era }
+  Era -> do
+    inc_inters e
+    wnf e s Era
   Sup l x y -> do
     inc_inters e
     (f0, f1) <- clone e l f
@@ -1452,7 +1496,9 @@ make_dup :: Env -> Name -> Lab -> Term -> IO ()
 make_dup e k l v = modifyIORef' (env_dup_map e) (IM.insert k (l, v))
 
 make_auto_dup :: Env -> Name -> Lab -> Term -> IO ()
-make_auto_dup e k l v = do { k <- fresh e ; make_dup e k l v }
+make_auto_dup e k l v = do
+  k <- fresh e
+  make_dup e k l v
 
 subst :: Kind -> Env -> Name -> Term -> IO ()
 subst s e k v = modifyIORef' (env_sub_map e) (IM.insert (k `shiftL` 2 + fromEnum s) v)
@@ -1472,7 +1518,6 @@ clone_list e l (x : xs) = do
   (x0  , x1 ) <- clone e l x
   (xs0 , xs1) <- clone_list e l xs
   return $ (x0 : xs0 , x1 : xs1)
-
 
 -- Allocation
 -- ==========
