@@ -309,46 +309,147 @@ type WnfGuaSwi = Env -> Stack -> Term -> Term -> Term -> Term -> IO Term
 -- Allocates a closed term, replacing all bound names with fresh ones.
 alloc :: Env -> Term -> IO Term
 alloc e term = go IM.empty term where
+
   go :: IM.IntMap Name -> Term -> IO Term
-  go m (Var k)       = return $ Var (IM.findWithDefault k k m)
-  go m (Dp0 k)       = return $ Dp0 (IM.findWithDefault k k m)
-  go m (Dp1 k)       = return $ Dp1 (IM.findWithDefault k k m)
-  go _ Era           = return Era
-  go m (Sup l a b)   = Sup l <$> go m a <*> go m b
-  go _ Set           = return Set
-  go m (All a b)     = All <$> go m a <*> go m b
-  go m (App f x)     = App <$> go m f <*> go m x
-  go _ Nat           = return Nat
-  go _ Zer           = return Zer
-  go m (Suc n)       = Suc <$> go m n
-  go m (Swi z s)     = Swi <$> go m z <*> go m s
-  go m (And a b)     = And <$> go m a <*> go m b
-  go m (Eql a b)     = Eql <$> go m a <*> go m b
-  go _ (Ref k)       = return $ Ref k
-  go _ (Nam k)       = return $ Nam k
-  go m (Dry f x)     = Dry <$> go m f <*> go m x
-  go m (Gua f g)     = Gua <$> go m f <*> go m g
-  go m (Sig a b)     = Sig <$> go m a <*> go m b
-  go m (Tup a b)     = Tup <$> go m a <*> go m b
-  go m (Get c)       = Get <$> go m c
-  go _ Emp           = return Emp
-  go _ Efq           = return Efq
-  go _ Uni           = return Uni
-  go _ One           = return One
-  go m (Use u)       = Use <$> go m u
-  go _ Bol           = return Bol
-  go _ Fal           = return Fal
-  go _ Tru           = return Tru
-  go m (If f t)      = If <$> go m f <*> go m t
-  go m (Lst t)       = Lst <$> go m t
-  go _ Nil           = return Nil
-  go m (Con h t)     = Con <$> go m h <*> go m t
-  go m (Mat n c)     = Mat <$> go m n <*> go m c
+
+  go m (Var k) = do
+    return $ Var (IM.findWithDefault k k m)
+
+  go m (Dp0 k) = do
+    return $ Dp0 (IM.findWithDefault k k m)
+
+  go m (Dp1 k) = do
+    return $ Dp1 (IM.findWithDefault k k m)
+
+  go _ Era = do
+    return Era
+
+  go m (Sup l a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ Sup l a' b'
+
+  go _ Set = do
+    return Set
+
+  go m (All a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ All a' b'
+
+  go m (App f x) = do
+    f' <- go m f
+    x' <- go m x
+    return $ App f' x'
+
+  go _ Nat = do
+    return Nat
+
+  go _ Zer = do
+    return Zer
+
+  go m (Suc n) = do
+    n' <- go m n
+    return $ Suc n'
+
+  go m (Swi z s) = do
+    z' <- go m z
+    s' <- go m s
+    return $ Swi z' s'
+
+  go m (And a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ And a' b'
+
+  go m (Eql a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ Eql a' b'
+
+  go _ (Ref k) = do
+    return $ Ref k
+
+  go _ (Nam k) = do
+    return $ Nam k
+
+  go m (Dry f x) = do
+    f' <- go m f
+    x' <- go m x
+    return $ Dry f' x'
+
+  go m (Gua f g) = do
+    f' <- go m f
+    g' <- go m g
+    return $ Gua f' g'
+
+  go m (Sig a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ Sig a' b'
+
+  go m (Tup a b) = do
+    a' <- go m a
+    b' <- go m b
+    return $ Tup a' b'
+
+  go m (Get c) = do
+    c' <- go m c
+    return $ Get c'
+
+  go _ Emp = do
+    return Emp
+
+  go _ Efq = do
+    return Efq
+
+  go _ Uni = do
+    return Uni
+
+  go _ One = do
+    return One
+
+  go m (Use u) = do
+    u' <- go m u
+    return $ Use u'
+
+  go _ Bol = do
+    return Bol
+
+  go _ Fal = do
+    return Fal
+
+  go _ Tru = do
+    return Tru
+
+  go m (If f t) = do
+    f' <- go m f
+    t' <- go m t
+    return $ If f' t'
+
+  go m (Lst t) = do
+    t' <- go m t
+    return $ Lst t'
+
+  go _ Nil = do
+    return Nil
+
+  go m (Con h t) = do
+    h' <- go m h
+    t' <- go m t
+    return $ Con h' t'
+
+  go m (Mat n c) = do
+    n' <- go m n
+    c' <- go m c
+    return $ Mat n' c'
+
   go m (Dup k l v t) = do
     k' <- fresh e
     v' <- go m v
     t' <- go (IM.insert k k' m) t
     return $ Dup k' l v' t'
+
   go m (Lam k f) = do
     k' <- fresh e
     f' <- go (IM.insert k k' m) f
@@ -361,109 +462,145 @@ snf :: Env -> Int -> Term -> IO Term
 snf e d x = do
   !x' <- wnf e [] x
   case x' of
+
     Var k -> do
       return $ Var k
+
     Dp0 k -> do
       return $ Dp0 k
+
     Dp1 k -> do
       return $ Dp1 k
+
     Era -> do
       return Era
+
     Sup l a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ Sup l a' b'
+
     Dup k l v t -> do
       subst DP0 e k (Nam (int_to_name d ++ "₀"))
       subst DP1 e k (Nam (int_to_name d ++ "₁"))
       v' <- snf e d v
       t' <- snf e d t
       return $ Dup d l v' t'
+
     Set -> do
       return Set
+      
     All a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ All a' b'
+
     Lam k f -> do
       subst VAR e k (Nam (int_to_name d))
       f' <- snf e (d + 1) f
       return $ Lam d f'
+
     App f x -> do
       f' <- snf e d f
       x' <- snf e d x
       return $ App f' x'
+
     Nat -> do
       return Nat
+
     Zer -> do
       return Zer
+
     Suc p -> do
       p' <- snf e d p
       return $ Suc p'
+
     Swi z s -> do
       z' <- snf e d z
       s' <- snf e d s
       return $ Swi z' s'
+
     And a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ And a' b'
+
     Eql a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ Eql a' b'
+
     Ref k -> do
       return $ Ref k
+
     Nam k -> do
       return $ Nam k
+
     Dry f x -> do
       f' <- snf e d f
       x' <- snf e d x
       return $ Dry f' x'
+
     Gua f g -> do
       g' <- snf e d g
       return g'
+
     Sig a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ Sig a' b'
+
     Tup a b -> do
       a' <- snf e d a
       b' <- snf e d b
       return $ Tup a' b'
+
     Get c -> do
       c' <- snf e d c
       return $ Get c'
+
     Emp -> do
       return Emp
+
     Efq -> do
       return Efq
+
     Uni -> do
       return Uni
+
     One -> do
       return One
+
     Use u -> do
       u' <- snf e d u
       return $ Use u'
+
     Bol -> do
       return Bol
+
     Fal -> do
       return Fal
+
     Tru -> do
       return Tru
+
     If f t -> do
       f' <- snf e d f
       t' <- snf e d t
       return $ If f' t'
+
     Lst t -> do
       t' <- snf e d t
       return $ Lst t'
+
     Nil -> do
       return Nil
+
     Con h t -> do
       h' <- snf e d h
       t' <- snf e d t
       return $ Con h' t'
+
     Mat n c -> do
       n' <- snf e d n
       c' <- snf e d c
@@ -476,124 +613,156 @@ collapse :: Env -> Term -> IO Term
 collapse e x = do
   !x <- wnf e [] x
   case x of
+
     Era -> do
       return Era
+
     (Sup l a b) -> do
       a' <- collapse e a
       b' <- collapse e b
       return $ Sup l a' b'
+
     Set -> do
       return Set
+
     All a b -> do
       aV <- fresh e
       bV <- fresh e
       a' <- collapse e a
       b' <- collapse e b
       inj e (Lam aV (Lam bV (All (Var aV) (Var bV)))) [a',b']
+
     (Lam k f) -> do
       fV <- fresh e
       f' <- collapse e f
       inj e (Lam fV (Lam k (Var fV))) [f']
+
     (App f x) -> do
       fV <- fresh e
       xV <- fresh e
       f' <- collapse e f
       x' <- collapse e x
       inj e (Lam fV (Lam xV (App (Var fV) (Var xV)))) [f',x']
+
     Nat -> do
       return Nat
+
     Zer -> do
       return Zer
+
     (Suc p) -> do
       pV <- fresh e
       p' <- collapse e p
       inj e (Lam pV (Suc (Var pV))) [p']
+
     (Swi z s) -> do
       zV <- fresh e
       sV <- fresh e
       z' <- collapse e z
       s' <- collapse e s
       inj e (Lam zV (Lam sV (Swi (Var zV) (Var sV)))) [z',s']
+
     (And a b) -> do
       aV <- fresh e
       bV <- fresh e
       a' <- collapse e a
       b' <- collapse e b
       inj e (Lam aV (Lam bV (And (Var aV) (Var bV)))) [a',b']
+
     (Eql a b) -> do
       aV <- fresh e
       bV <- fresh e
       a' <- collapse e a
       b' <- collapse e b
       inj e (Lam aV (Lam bV (Eql (Var aV) (Var bV)))) [a',b']
+
     Nam n -> do
       return $ Nam n
+
     Dry f x -> do
       fV <- fresh e
       xV <- fresh e
       f' <- collapse e f
       x' <- collapse e x
       inj e (Lam fV (Lam xV (Dry (Var fV) (Var xV)))) [f',x']
+
     (Gua f g) -> do
       collapse e g
+
     Sig a b -> do
       aV <- fresh e
       bV <- fresh e
       a' <- collapse e a
       b' <- collapse e b
       inj e (Lam aV (Lam bV (Sig (Var aV) (Var bV)))) [a',b']
+
     Tup a b -> do
       aV <- fresh e
       bV <- fresh e
       a' <- collapse e a
       b' <- collapse e b
       inj e (Lam aV (Lam bV (Tup (Var aV) (Var bV)))) [a',b']
+
     Get c -> do
       cV <- fresh e
       c' <- collapse e c
       inj e (Lam cV (Get (Var cV))) [c']
+
     Emp -> do
       return Emp
+
     Efq -> do
       return Efq
+
     Uni -> do
       return Uni
+
     One -> do
       return One
+
     Use u -> do
       uV <- fresh e
       u' <- collapse e u
       inj e (Lam uV (Use (Var uV))) [u']
+
     Bol -> do
       return Bol
+
     Fal -> do
       return Fal
+
     Tru -> do
       return Tru
+
     If f t -> do
       fV <- fresh e
       tV <- fresh e
       f' <- collapse e f
       t' <- collapse e t
       inj e (Lam fV (Lam tV (If (Var fV) (Var tV)))) [f',t']
+
     Lst t -> do
       tV <- fresh e
       t' <- collapse e t
       inj e (Lam tV (Lst (Var tV))) [t']
+
     Nil -> do
       return Nil
+
     Con h t -> do
       hV <- fresh e
       tV <- fresh e
       h' <- collapse e h
       t' <- collapse e t
       inj e (Lam hV (Lam tV (Con (Var hV) (Var tV)))) [h',t']
+
     Mat n c -> do
       nV <- fresh e
       cV <- fresh e
       n' <- collapse e n
       c' <- collapse e c
       inj e (Lam nV (Lam cV (Mat (Var nV) (Var cV)))) [n',c']
+
     x -> do
       return $ x
 
@@ -645,3 +814,7 @@ run book_src term_src = do
 
 main :: IO ()
 main = test
+
+-- refactor alloc so that ALL clauses of the 'go' function use the do notation
+-- no clause should use <$> or <*>
+-- do not align the = sign
