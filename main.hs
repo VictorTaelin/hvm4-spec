@@ -100,11 +100,11 @@ int_to_name n | n <  64 = [alphabet !! n]
 -- Parsing
 -- =======
 
-lexeme :: ReadP a -> ReadP a
-lexeme p = skipSpaces *> p
+parse_lexeme :: ReadP a -> ReadP a
+parse_lexeme p = skipSpaces *> p
 
 parse_name :: ReadP String
-parse_name = lexeme $ do
+parse_name = parse_lexeme $ do
   head <- satisfy (`elem` alphabet_first)
   tail <- munch (`elem` alphabet)
   return (head : tail)
@@ -113,7 +113,7 @@ parse_term :: ReadP Term
 parse_term = parse_term_base
 
 parse_term_base :: ReadP Term
-parse_term_base = lexeme $ choice
+parse_term_base = parse_lexeme $ choice
   [ parse_lam_or_swi
   , parse_dup
   , parse_par
@@ -127,7 +127,7 @@ parse_term_base = lexeme $ choice
 
 parse_par :: ReadP Term
 parse_par = do
-  lexeme (char '(')
+  parse_lexeme (char '(')
   t <- parse_term
   choice
     [ parse_par_app t
@@ -136,12 +136,12 @@ parse_par = do
 parse_par_app :: Term -> ReadP Term
 parse_par_app t = do
   ts <- many parse_term
-  lexeme (char ')')
+  parse_lexeme (char ')')
   return (foldl' App t ts)
 
 parse_lam_or_swi :: ReadP Term
 parse_lam_or_swi = do
-  lexeme (char 'λ')
+  parse_lexeme (char 'λ')
   choice
     [ parse_lam_brace
     , parse_lam_var
@@ -149,56 +149,56 @@ parse_lam_or_swi = do
 
 parse_lam_brace :: ReadP Term
 parse_lam_brace = do
-  lexeme (char '{')
+  parse_lexeme (char '{')
   t <- parse_mat
-  lexeme (char '}')
+  parse_lexeme (char '}')
   return t
 
 parse_lam_var :: ReadP Term
 parse_lam_var = do
   k <- parse_name
-  lexeme (char '.')
+  parse_lexeme (char '.')
   t <- parse_term
   return (Lam (name_to_int k) t)
 
 parse_mat :: ReadP Term
 parse_mat = do
-  lexeme (char '#')
+  parse_lexeme (char '#')
   k <- parse_name
-  lexeme (char ':')
+  parse_lexeme (char ':')
   h <- parse_term
-  optional (lexeme (char ';'))
+  optional (parse_lexeme (char ';'))
   m <- parse_term
   return (Mat (name_to_int k) h m)
 
 parse_dup :: ReadP Term
 parse_dup = do
-  lexeme (char '!')
+  parse_lexeme (char '!')
   k <- parse_name
-  lexeme (char '&')
+  parse_lexeme (char '&')
   l <- parse_name
-  lexeme (char '=')
+  parse_lexeme (char '=')
   v <- parse_term
-  optional (lexeme (char ';'))
+  optional (parse_lexeme (char ';'))
   t <- parse_term
   return (Dup (name_to_int k) (name_to_int l) v t)
 
 parse_sup :: ReadP Term
 parse_sup = do
-  lexeme (char '&')
+  parse_lexeme (char '&')
   l <- parse_name
-  between (lexeme (char '{')) (lexeme (char '}')) $ do
+  between (parse_lexeme (char '{')) (parse_lexeme (char '}')) $ do
     a <- parse_term
-    optional (lexeme (char ','))
+    optional (parse_lexeme (char ','))
     b <- parse_term
     return (Sup (name_to_int l) a b)
 
 parse_era :: ReadP Term
-parse_era = lexeme (string "&{}") >> return Era
+parse_era = parse_lexeme (string "&{}") >> return Era
 
 parse_ref :: ReadP Term
 parse_ref = do
-  lexeme (char '@')
+  parse_lexeme (char '@')
   k <- parse_name
   return (Ref (name_to_int k))
 
@@ -214,20 +214,20 @@ parse_var = do
 
 parse_ctr :: ReadP Term
 parse_ctr = do
-  lexeme (char '#')
+  parse_lexeme (char '#')
   k <- parse_name
   choice
     [ do
-        lexeme (char '{')
-        args <- sepBy parse_term (lexeme (char ','))
-        lexeme (char '}')
+        parse_lexeme (char '{')
+        args <- sepBy parse_term (parse_lexeme (char ','))
+        parse_lexeme (char '}')
         return (Ctr (name_to_int k) args)
     , return (Ctr (name_to_int k) [])
     ]
 
 parse_nam :: ReadP Term
 parse_nam = do
-  lexeme (char '^')
+  parse_lexeme (char '^')
   choice
     [ parse_nam_dry
     , parse_nam_var
@@ -235,10 +235,10 @@ parse_nam = do
 
 parse_nam_dry :: ReadP Term
 parse_nam_dry = do
-  lexeme (char '(')
+  parse_lexeme (char '(')
   f <- parse_term
   x <- parse_term
-  lexeme (char ')')
+  parse_lexeme (char ')')
   return (Dry f x)
 
 parse_nam_var :: ReadP Term
@@ -248,9 +248,9 @@ parse_nam_var = do
 
 parse_func :: ReadP (Name, Term)
 parse_func = do
-  lexeme (char '@')
+  parse_lexeme (char '@')
   k <- parse_name
-  lexeme (char '=')
+  parse_lexeme (char '=')
   f <- parse_term
   return (name_to_int k, f)
 
@@ -317,15 +317,16 @@ clone e l v = do
 
 clone_list :: Env -> Lab -> [Term] -> IO ([Term], [Term])
 clone_list e l []     = return ([], [])
-clone_list e l (t:ts) = do
-  (t0, t1)   <- clone e l t
-  (ts0, ts1) <- clone_list e l ts
-  return (t0:ts0, t1:ts1)
+clone_list e l (h:t) = do
+  (h0, h1) <- clone e l h
+  (t0, t1) <- clone_list e l t
+  return (h0:t0, h1:t1)
 
 -- WNF: Weak Normal Form
 -- =====================
 
-type WnfDup    = Int -> Env -> Name -> Lab -> Term -> IO Term
+type WnfApp = Env -> Term -> Term -> IO Term
+type WnfDup = Int -> Env -> Name -> Lab -> Term -> IO Term
 
 wnf :: Env -> Term -> IO Term
 wnf e term = do
@@ -484,35 +485,35 @@ wnf_dup_mat i e k l (Mat kn h m) = do
     subst e k (Mat kn hA mA)
     wnf e (Mat kn hB mB)
 
-wnf_app_era :: Env -> Term -> Term -> IO Term
+wnf_app_era :: WnfApp
 wnf_app_era e Era v = do
   inc_inters e
   wnf e Era
 
-wnf_app_nam :: Env -> Term -> Term -> IO Term
+wnf_app_nam :: WnfApp
 wnf_app_nam e (Nam fk) v = wnf e (Dry (Nam fk) v)
 
-wnf_app_dry :: Env -> Term -> Term -> IO Term
+wnf_app_dry :: WnfApp
 wnf_app_dry e (Dry ff fx) v = wnf e (Dry (Dry ff fx) v)
 
-wnf_app_lam :: Env -> Term -> Term -> IO Term
+wnf_app_lam :: WnfApp
 wnf_app_lam e (Lam fx ff) v = do
   inc_inters e
   subst e fx v
   wnf e ff
 
-wnf_app_sup :: Env -> Term -> Term -> IO Term
+wnf_app_sup :: WnfApp
 wnf_app_sup e (Sup fL fa fb) v = do
   inc_inters e
   (x0,x1) <- clone e fL v
   wnf e (Sup fL (App fa x0) (App fb x1))
 
-wnf_app_mat_era :: Env -> Term -> Term -> IO Term
+wnf_app_mat_era :: WnfApp
 wnf_app_mat_era e f x = do
   inc_inters e
   wnf e Era
 
-wnf_app_mat_sup :: Env -> Term -> Term -> IO Term
+wnf_app_mat_sup :: WnfApp
 wnf_app_mat_sup e (Mat k h m) (Sup l x y) = do
   inc_inters e
   (h0, h1) <- clone e l h
