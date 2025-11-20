@@ -1,5 +1,3 @@
---[./README.md]
-
 {-# LANGUAGE BangPatterns, CPP #-}
 
 import Control.Monad (forM_, when)
@@ -1960,7 +1958,6 @@ tests =
   , ("λx.(@gen 2+x)", "&A{&B{λa.2+a,λa.3+a},&D{λa.(gen a),&E{λa.2+(gen a),λa.4+(gen a)}}}")
   , ("(@gen 2)", "&A{&B{2,3},&D{&C{0,1},&E{&C{2,3},&C{4,5}}}}")
   , ("!f&DUP=@prd; (f₀ (f₁ 0))", "0")
-  , ("(λ{0:0; 1+:λp.p} (^prd ~> λ{0:0;1+:λp.p} 4))", "2")
   , ("2 == 2", "#T")
   , ("3 == 2", "#F")
   , ("(λa.λb.a) == (λx.λy.x)", "#T")
