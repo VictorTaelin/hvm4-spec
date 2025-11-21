@@ -43,9 +43,10 @@ data Term
   deriving (Eq)
 
 data Book = Book (M.Map Name Term)
-data BookItem
-  = BookFunc !(Name, Term)
-  | BookInclude !FilePath
+
+data Declaration
+  = Include FilePath
+  | Define Name Term
 
 data Env = Env
   { env_book  :: !Book
@@ -246,95 +247,56 @@ parse_ctr = do
   parse_lexeme (char '}')
   return (Ctr (name_to_int k) xs)
 
-parse_func :: ReadP (Name, Term)
-parse_func = do
-  parse_lexeme (char '@')
-  k <- parse_name
-  parse_lexeme (char '=')
-  f <- parse_term
-  return (name_to_int k, f)
-
-parse_include :: ReadP BookItem
+parse_include :: ReadP FilePath
 parse_include = parse_lexeme $ do
   _ <- string "#include"
   skip
   _ <- char '"'
   path <- munch (/= '"')
   _ <- char '"'
-  return (BookInclude path)
+  return path
 
-parse_book_item :: ReadP BookItem
-parse_book_item = choice
-  [ parse_include
-  , BookFunc <$> parse_func
+parse_function :: ReadP (Name, Term)
+parse_function = do
+  parse_lexeme (char '@')
+  k <- parse_name
+  parse_lexeme (char '=')
+  f <- parse_term
+  return (name_to_int k, f)
+
+parse_declaration :: ReadP Declaration
+parse_declaration = choice
+  [ Include <$> parse_include
+  , uncurry Define <$> parse_function
   ]
-
-parse_book :: ReadP [BookItem]
-parse_book = do
-  skip
-  funcs <- many parse_book_item
-  skip
-  eof
-  return funcs
-
-parse_book_items :: String -> [BookItem]
-parse_book_items s = case readP_to_S parse_book s of
-  [(items, "")] -> items
-  _             -> error "bad-parse"
 
 read_term :: String -> Term
 read_term s = case readP_to_S (parse_term <* skip <* eof) s of
   [(t, "")] -> bruijn t
   _         -> error "bad-parse"
 
-read_book :: String -> Book
-read_book s = Book (foldl' add M.empty (parse_book_items s))
+read_book :: FilePath -> IO Book
+read_book path = do
+  defs <- load_book S.empty path
+  return $ Book (M.map bruijn defs)
+
+load_book :: S.Set FilePath -> FilePath -> IO (M.Map Name Term)
+load_book visited path = do
+  path <- canonicalizePath path
+  if S.member path visited then
+    return M.empty
+  else do
+    code <- readFile path
+    decs <- case readP_to_S (many parse_declaration <* skip <* eof) code of
+      ((x, ""):_) -> return x
+      _           -> fail $ "Parse error in " ++ path
+    foldM go M.empty decs
   where
-    add m item = case item of
-      BookFunc (k, v) -> M.insert k (bruijn v) m
-      BookInclude p   -> error $ "unexpected include: " ++ p
-
-read_book_file :: FilePath -> IO Book
-read_book_file path = do
-  full <- canonicalizePath path
-  (funcs, _) <- load_book S.empty full
-  return $ Book (M.map bruijn funcs)
-
-load_book :: S.Set FilePath -> FilePath -> IO (M.Map Name Term, S.Set FilePath)
-load_book parsed path
-  | path `S.member` parsed = return (M.empty, parsed)
-  | otherwise = do
-      book <- parse_book_items <$> readFile path
-      let next = S.insert path parsed
-          base = takeDirectory path
-      foldM (acc_book base) (M.empty, next) book
-
-acc_book :: FilePath -> (M.Map Name Term, S.Set FilePath) -> BookItem -> IO (M.Map Name Term, S.Set FilePath)
-acc_book base (book, loaded) item = case item of
-  BookFunc (k, v) -> return (M.insert k v book, loaded)
-  BookInclude file -> do
-    let target = base </> file
-    full <- canonicalizePath target
-    (inc_book, loaded') <- load_book loaded full
-    return (M.union inc_book book, loaded')
-
-bruijn :: Term -> Term
-bruijn t = go IM.empty 0 t where
-  go :: IM.IntMap Int -> Int -> Term -> Term
-  go env d t = case t of
-    Var k       -> case IM.lookup k env of { Just l -> Var (d - 1 - l) ; Nothing -> Var k }
-    Cop s k     -> case IM.lookup k env of { Just l -> Cop s (d - 1 - l) ; Nothing -> Cop s k }
-    Ref k       -> Ref k
-    Nam k       -> Nam k
-    Dry f x     -> Dry (go env d f) (go env d x)
-    Era         -> Era
-    Sup l a b   -> Sup l (go env d a) (go env d b)
-    Dup k l v b -> Dup k l (go env d v) (go (IM.insert k d env) (d + 1) b)
-    Lam k f     -> Lam k (go (IM.insert k d env) (d + 1) f)
-    App f x     -> App (go env d f) (go env d x)
-    Ctr k xs    -> Ctr k (map (go env d) xs)
-    Mat k h m   -> Mat k (go env d h) (go env d m)
-    Alo s b     -> Alo s (go env d b)
+    go defs (Define k v) = do
+      return (M.insert k v defs)
+    go defs (Include p)  = do
+      incl <- load_book (S.insert path visited) (takeDirectory path </> p)
+      return (M.union incl defs)
 
 -- Environment
 -- ===========
@@ -369,6 +331,27 @@ make_dup e k l v = modifyIORef' (env_dups  e) (IM.insert k (l, v))
 
 subst :: Env -> Name -> Term -> IO ()
 subst e k v = modifyIORef' (env_subst e) (IM.insert k v)
+
+-- Quoting
+-- =======
+
+bruijn :: Term -> Term
+bruijn t = go IM.empty 0 t where
+  go :: IM.IntMap Int -> Int -> Term -> Term
+  go env d t = case t of
+    Var k       -> case IM.lookup k env of { Just l -> Var (d - 1 - l) ; Nothing -> Var k }
+    Cop s k     -> case IM.lookup k env of { Just l -> Cop s (d - 1 - l) ; Nothing -> Cop s k }
+    Ref k       -> Ref k
+    Nam k       -> Nam k
+    Dry f x     -> Dry (go env d f) (go env d x)
+    Era         -> Era
+    Sup l a b   -> Sup l (go env d a) (go env d b)
+    Dup k l v b -> Dup k l (go env d v) (go (IM.insert k d env) (d + 1) b)
+    Lam k f     -> Lam k (go (IM.insert k d env) (d + 1) f)
+    App f x     -> App (go env d f) (go env d x)
+    Ctr k xs    -> Ctr k (map (go env d) xs)
+    Mat k h m   -> Mat k (go env d h) (go env d m)
+    Alo s b     -> Alo s (go env d b)
 
 -- Cloning
 -- =======

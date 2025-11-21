@@ -10,9 +10,7 @@ if [ ! -f "$HS_MAIN" ]; then
   exit 1
 fi
 
-if [ ! -x "$BIN" ] || [ "$HS_MAIN" -nt "$BIN" ]; then
-  (cd "$DIR/../haskell" && ghc -O2 -o main main.hs)
-fi
+(cd "$DIR/../haskell" && ghc -O2 -o main main.hs)
 
 tmp_files=()
 cleanup() {
