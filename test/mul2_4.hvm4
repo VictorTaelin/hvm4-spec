@@ -1,3 +1,3 @@
 #import "_book_.hvm4"
-@main = @dbl(#S{#S{#S{#S{#Z{}}}}})
+@main = @mul2(#S{#S{#S{#S{#Z{}}}}})
 //#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}

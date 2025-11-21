@@ -1,3 +1,3 @@
 #import "_book_.hvm4"
-@main = @MUL(@C4, @C4)
+@main = @c_mul(@c_4, @c_4)
 //λa.λb.a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(b))))))))))))))))

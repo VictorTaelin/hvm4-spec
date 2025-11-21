@@ -1,19 +1,17 @@
-@T   = λt. λf. t
-@F   = λt. λf. f
-@NOT = λb. λt. λf. b(f, t)
-@ADD = λa. λb. λs. λz. !S&B=s; a(S₀, b(S₁, z))
-@MUL = λa. λb. λs. λz. a(b(s), z)
-@EXP = λa. λb. b(a)
-@C1  = λs. λx. s(x)
-@K1  = λs. λx. s(x)
-@C2  = λs. !S0&C=s; λx0.S0₀(S0₁(x0))
-@K2  = λs. !S0&K=s; λx0.S0₀(S0₁(x0))
-@C4  = λs. !S0&C=s; !S1&C=λx0.S0₀(S0₁(x0)); λx1.S1₀(S1₁(x1))
-@K4  = λs. !S0&K=s; !S1&K=λx0.S0₀(S0₁(x0)); !S2&K=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
-@C8  = λs. !S0&C=s; !S1&C=λx0.S0₀(S0₁(x0)); !S2&C=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
-@K8  = λs. !S0&K=s; !S1&K=λx0.S0₀(S0₁(x0)); !S2&K=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
-@ZN  = #Z{}
-@SN  = λn. #S{n}
-@dbl = λ{#Z:#Z{}; λ{#S:λp.#S{#S{@dbl(p)}}; &{}}}
-@add = λ{#Z:λb.b; λ{#S:λa.λb.#S{@add(a, b)}; &{}}}
-@sum = λ{#Z:#Z{}; λ{#S:λp.!P&S=p;#S{@add(P₀, @sum(P₁))}; &{}}}
+@c_tru = λt. λf. t
+@c_fal = λt. λf. f
+@c_not = λb. λt. λf. b(f, t)
+@c_add = λa. λb. λs. λz. !S&B=s; a(S₀, b(S₁, z))
+@c_mul = λa. λb. λs. λz. a(b(s), z)
+@c_exp = λa. λb. b(a)
+@c_1   = λs. λx. s(x)
+@c_1b  = λs. λx. s(x)
+@c_2   = λs. !S0&C=s; λx0.S0₀(S0₁(x0))
+@c_2b  = λs. !S0&K=s; λx0.S0₀(S0₁(x0))
+@c_4   = λs. !S0&C=s; !S1&C=λx0.S0₀(S0₁(x0)); λx1.S1₀(S1₁(x1))
+@c_4b  = λs. !S0&K=s; !S1&K=λx0.S0₀(S0₁(x0)); !S2&K=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
+@c_8   = λs. !S0&C=s; !S1&C=λx0.S0₀(S0₁(x0)); !S2&C=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
+@c_8b  = λs. !S0&K=s; !S1&K=λx0.S0₀(S0₁(x0)); !S2&K=λx1.S1₀(S1₁(x1)); λx3.S2₀(S2₁(x3))
+@mul2  = λ{#Z:#Z{}; λ{#S:λp.#S{#S{@mul2(p)}}; &{}}}
+@add   = λ{#Z:λb.b; λ{#S:λa.λb.#S{@add(a, b)}; &{}}}
+@sum   = λ{#Z:#Z{}; λ{#S:λp.!P&S=p;#S{@add(P₀, @sum(P₁))}; &{}}}
