@@ -146,15 +146,14 @@ parse_term_suff t = loop <++ return t where
 
 parse_term_base :: ReadP Term
 parse_term_base = parse_lexeme $ choice
-  [ parse_lam_or_swi
+  [ parse_abs
   , parse_dup
   , parse_sup
   , parse_era
   , parse_ctr
   , parse_ref
-  , parse_nam
   , parse_par
-  , parse_var
+  , parse_nam
   ]
 
 parse_par :: ReadP Term
@@ -164,23 +163,13 @@ parse_par = do
   parse_lexeme (char ')')
   return t
 
-parse_lam_or_swi :: ReadP Term
-parse_lam_or_swi = do
+parse_abs :: ReadP Term
+parse_abs = do
   parse_lexeme (char 'λ')
-  choice
-    [ parse_lam_brace
-    , parse_lam_var
-    ]
+  choice [ parse_mat , parse_lam ]
 
-parse_lam_brace :: ReadP Term
-parse_lam_brace = do
-  parse_lexeme (char '{')
-  t <- parse_mat
-  parse_lexeme (char '}')
-  return t
-
-parse_lam_var :: ReadP Term
-parse_lam_var = do
+parse_lam :: ReadP Term
+parse_lam = do
   k <- parse_name
   parse_lexeme (char '.')
   t <- parse_term
@@ -188,12 +177,14 @@ parse_lam_var = do
 
 parse_mat :: ReadP Term
 parse_mat = do
+  parse_lexeme (char '{')
   parse_lexeme (char '#')
   k <- parse_name
   parse_lexeme (char ':')
   h <- parse_term
   optional (parse_lexeme (char ';'))
   m <- parse_term
+  parse_lexeme (char '}')
   return (Mat (name_to_int k) h m)
 
 parse_dup :: ReadP Term
@@ -227,15 +218,24 @@ parse_ref = do
   k <- parse_name
   return (Ref (name_to_int k))
 
-parse_var :: ReadP Term
-parse_var = do
+parse_nam :: ReadP Term
+parse_nam = do
   k <- parse_name
-  let kid = name_to_int k
-  choice
-    [ string "₀" >> return (Cop 0 kid)
-    , string "₁" >> return (Cop 1 kid)
-    , return (Var kid)
-    ]
+  choice [ parse_cop_0 k , parse_cop_1 k , parse_var k ]
+
+parse_cop_0 :: String -> ReadP Term
+parse_cop_0 k = do
+  _ <- string "₀"
+  return (Cop 0 (name_to_int k))
+
+parse_cop_1 :: String -> ReadP Term
+parse_cop_1 k = do
+  _ <- string "₁"
+  return (Cop 1 (name_to_int k))
+
+parse_var :: String -> ReadP Term
+parse_var k = do
+  return (Var (name_to_int k))
 
 parse_ctr :: ReadP Term
 parse_ctr = do
@@ -245,28 +245,6 @@ parse_ctr = do
   xs <- sepBy parse_term (parse_lexeme (char ','))
   parse_lexeme (char '}')
   return (Ctr (name_to_int k) xs)
-
-parse_nam :: ReadP Term
-parse_nam = do
-  parse_lexeme (char '^')
-  choice
-    [ parse_nam_dry
-    , parse_nam_var
-    ]
-
-parse_nam_dry :: ReadP Term
-parse_nam_dry = do
-  parse_lexeme (char '(')
-  f <- parse_term
-  parse_lexeme (char ',')
-  x <- parse_term
-  parse_lexeme (char ')')
-  return (Dry f x)
-
-parse_nam_var :: ReadP Term
-parse_nam_var = do
-  k <- parse_name
-  return (Nam k)
 
 parse_func :: ReadP (Name, Term)
 parse_func = do
@@ -278,7 +256,7 @@ parse_func = do
 
 parse_include :: ReadP BookItem
 parse_include = parse_lexeme $ do
-  _ <- string "#include" <++ string "#import"
+  _ <- string "#include"
   skip
   _ <- char '"'
   path <- munch (/= '"')
