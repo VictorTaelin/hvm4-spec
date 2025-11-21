@@ -111,7 +111,19 @@ int_to_name n | n <  64 = [alphabet !! n]
 -- =======
 
 parse_lexeme :: ReadP a -> ReadP a
-parse_lexeme p = skipSpaces *> p
+parse_lexeme p = skip *> p
+
+skip :: ReadP ()
+skip = do
+  skipSpaces
+  skip_comment <++ return ()
+
+skip_comment :: ReadP ()
+skip_comment = do
+  _ <- string "//"
+  _ <- munch (/= '\n')
+  _ <- char '\n' <++ return '\n'
+  skip
 
 parse_name :: ReadP String
 parse_name = parse_lexeme $ do
@@ -267,7 +279,7 @@ parse_func = do
 parse_include :: ReadP BookItem
 parse_include = parse_lexeme $ do
   _ <- string "#include" <++ string "#import"
-  skipSpaces
+  skip
   _ <- char '"'
   path <- munch (/= '"')
   _ <- char '"'
@@ -281,9 +293,9 @@ parse_book_item = choice
 
 parse_book :: ReadP [BookItem]
 parse_book = do
-  skipSpaces
+  skip
   funcs <- many parse_book_item
-  skipSpaces
+  skip
   eof
   return funcs
 
@@ -293,7 +305,7 @@ parse_book_items s = case readP_to_S parse_book s of
   _             -> error "bad-parse"
 
 read_term :: String -> Term
-read_term s = case readP_to_S (parse_term <* skipSpaces <* eof) s of
+read_term s = case readP_to_S (parse_term <* skip <* eof) s of
   [(t, "")] -> bruijn t
   _         -> error "bad-parse"
 

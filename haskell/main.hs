@@ -67,11 +67,11 @@ main = do
   book <- read_book_file file
   EvalResult val itrs dt ips <- eval_term book (Ref (name_to_int "main"))
 
-  print val
-
-  forM_ coll $ \lim -> do
-    let terms = flatten val
-    forM_ (maybe terms (`take` terms) lim) print
+  case coll of
+    Nothing -> print val
+    Just lim -> do
+      let terms = flatten val
+      forM_ (maybe terms (`take` terms) lim) print
 
   when stats $ do
     putStrLn $ "- Itrs: " ++ show itrs ++ " interactions"
