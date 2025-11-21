@@ -1,0 +1,3 @@
+#import "_book_.hvm4"
+@main = @C8(@K8, @NOT, @T)
+//λa.λb.a

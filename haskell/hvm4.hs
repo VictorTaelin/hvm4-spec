@@ -1,18 +1,21 @@
 {-# LANGUAGE BangPatterns, CPP #-}
 
-import Control.Monad (forM_, when)
+import Control.Monad (foldM, forM_, when)
 import Data.Bits (shiftL)
 import Data.Char (isDigit)
 import Data.IORef
 import Data.List (foldl', elemIndex, intercalate)
 import System.CPUTime
+import System.Directory (canonicalizePath)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
+import System.FilePath ((</>), takeDirectory)
 import System.IO (hPutStrLn, stderr)
 import Text.ParserCombinators.ReadP
 import Text.Printf
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 
 debug :: Bool
 debug = False
@@ -40,6 +43,9 @@ data Term
   deriving (Eq)
 
 data Book = Book (M.Map Name Term)
+data BookItem
+  = BookFunc !(Name, Term)
+  | BookInclude !FilePath
 
 data Env = Env
   { env_book  :: !Book
@@ -258,13 +264,33 @@ parse_func = do
   f <- parse_term
   return (name_to_int k, f)
 
-parse_book :: ReadP Book
+parse_include :: ReadP BookItem
+parse_include = parse_lexeme $ do
+  _ <- string "#include" <++ string "#import"
+  skipSpaces
+  _ <- char '"'
+  path <- munch (/= '"')
+  _ <- char '"'
+  return (BookInclude path)
+
+parse_book_item :: ReadP BookItem
+parse_book_item = choice
+  [ parse_include
+  , BookFunc <$> parse_func
+  ]
+
+parse_book :: ReadP [BookItem]
 parse_book = do
   skipSpaces
-  funcs <- many parse_func
+  funcs <- many parse_book_item
   skipSpaces
   eof
-  return $ Book (M.fromList funcs)
+  return funcs
+
+parse_book_items :: String -> [BookItem]
+parse_book_items s = case readP_to_S parse_book s of
+  [(items, "")] -> items
+  _             -> error "bad-parse"
 
 read_term :: String -> Term
 read_term s = case readP_to_S (parse_term <* skipSpaces <* eof) s of
@@ -272,9 +298,35 @@ read_term s = case readP_to_S (parse_term <* skipSpaces <* eof) s of
   _         -> error "bad-parse"
 
 read_book :: String -> Book
-read_book s = case readP_to_S parse_book s of
-  [(Book m, "")] -> Book (M.map bruijn m)
-  _              -> error "bad-parse"
+read_book s = Book (foldl' add M.empty (parse_book_items s))
+  where
+    add m item = case item of
+      BookFunc (k, v) -> M.insert k (bruijn v) m
+      BookInclude p   -> error $ "unexpected include: " ++ p
+
+read_book_file :: FilePath -> IO Book
+read_book_file path = do
+  full <- canonicalizePath path
+  (funcs, _) <- load_book S.empty full
+  return $ Book (M.map bruijn funcs)
+
+load_book :: S.Set FilePath -> FilePath -> IO (M.Map Name Term, S.Set FilePath)
+load_book parsed path
+  | path `S.member` parsed = return (M.empty, parsed)
+  | otherwise = do
+      book <- parse_book_items <$> readFile path
+      let next = S.insert path parsed
+          base = takeDirectory path
+      foldM (acc_book base) (M.empty, next) book
+
+acc_book :: FilePath -> (M.Map Name Term, S.Set FilePath) -> BookItem -> IO (M.Map Name Term, S.Set FilePath)
+acc_book base (book, loaded) item = case item of
+  BookFunc (k, v) -> return (M.insert k v book, loaded)
+  BookInclude file -> do
+    let target = base </> file
+    full <- canonicalizePath target
+    (inc_book, loaded') <- load_book loaded full
+    return (M.union inc_book book, loaded')
 
 bruijn :: Term -> Term
 bruijn t = go IM.empty 0 t where

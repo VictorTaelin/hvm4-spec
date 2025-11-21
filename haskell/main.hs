@@ -64,7 +64,7 @@ main = do
     Left err -> hPutStrLn stderr err >> exitFailure
     Right o  -> return o
 
-  book <- read_book <$> readFile file
+  book <- read_book_file file
   EvalResult val itrs dt ips <- eval_term book (Ref (name_to_int "main"))
 
   print val

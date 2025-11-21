@@ -1,0 +1,3 @@
+#import "_book_.hvm4"
+@main = @EXP(@C4, @K2)
+//λa.λb.a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(b))))))))))))))))

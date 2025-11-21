@@ -1,0 +1,3 @@
+#import "_book_.hvm4"
+@main = @ADD(@C1, @C1, @NOT)
+//λa.λb.λc.a(b,c)

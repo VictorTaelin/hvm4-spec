@@ -1,0 +1,3 @@
+#import "_book_.hvm4"
+@main = @NOT(@NOT(@T))
+//λa.λb.a
