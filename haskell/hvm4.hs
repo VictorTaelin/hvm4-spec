@@ -345,8 +345,8 @@ bruijn :: Term -> Term
 bruijn t = go IM.empty 0 t where
   go :: IM.IntMap Int -> Int -> Term -> Term
   go env d t = case t of
-    Var k       -> case IM.lookup k env of { Just l -> Var (d - 1 - l) ; Nothing -> Var k }
-    Cop s k     -> case IM.lookup k env of { Just l -> Cop s (d - 1 - l) ; Nothing -> Cop s k }
+    Var k       -> Var   (d - 1 - env IM.! k)
+    Cop s k     -> Cop s (d - 1 - env IM.! k)
     Ref k       -> Ref k
     Nam k       -> Nam k
     Dry f x     -> Dry (go env d f) (go env d x)
@@ -386,44 +386,44 @@ wnf e term = do
   when debug $ putStrLn $ "wnf: " ++ show term
   case term of
     Var k -> do
-      wnf_var e k
+      var e k
     Cop s k -> do
       got <- take_dup e k
       case got of
         Just (l, v) -> do
           v <- wnf e v
           case v of
-            Era   -> wnf_dup_era s e k l v
-            Sup{} -> wnf_dup_sup s e k l v
-            Lam{} -> wnf_dup_lam s e k l v
-            Nam{} -> wnf_dup_nam s e k l v
-            Dry{} -> wnf_dup_dry s e k l v
-            Ctr{} -> wnf_dup_ctr s e k l v
-            Mat{} -> wnf_dup_mat s e k l v
+            Era   -> dup_era s e k l v
+            Sup{} -> dup_sup s e k l v
+            Lam{} -> dup_lam s e k l v
+            Nam{} -> dup_nam s e k l v
+            Dry{} -> dup_dry s e k l v
+            Ctr{} -> dup_ctr s e k l v
+            Mat{} -> dup_mat s e k l v
             _     -> return (Dup k l v (Cop s k))
         Nothing -> do
-          wnf_cop s e k
+          cop s e k
     App f x -> do
       f <- wnf e f
       case f of
-        Era   -> wnf_app_era e f x
-        Sup{} -> wnf_app_sup e f x
-        Lam{} -> wnf_app_lam e f x
-        Nam{} -> wnf_app_nam e f x
-        Dry{} -> wnf_app_dry e f x
+        Era   -> app_era e f x
+        Sup{} -> app_sup e f x
+        Lam{} -> app_lam e f x
+        Nam{} -> app_nam e f x
+        Dry{} -> app_dry e f x
         Mat k h m -> do
           x <- wnf e x
           case x of
-            Era      -> wnf_app_mat_era e f x
-            Sup{}    -> wnf_app_mat_sup e f x
-            Ctr k' a -> wnf_app_mat_ctr e f k h m k' a
+            Era      -> app_mat_era e f x
+            Sup{}    -> app_mat_sup e f x
+            Ctr k' a -> app_mat_ctr e f k h m k' a
             _        -> return (App f x)
         _ -> return (App f x)
     Dup k l v t -> do
       make_dup e k l v
       wnf e t
     Ref k -> do
-      wnf_ref e k
+      ref e k
     Alo s t -> case t of
       Var k     -> wnf e $ Var (s !! k)
       Cop c k   -> wnf e $ Cop c (s !! k)
@@ -448,30 +448,30 @@ wnf e term = do
 -- WNF: Interactions
 -- =================
 
-wnf_var :: Env -> Name -> IO Term
-wnf_var e k = do
-  when debug $ putStrLn $ "wnf_var: " ++ show (Var k)
+var :: Env -> Name -> IO Term
+var e k = do
+  when debug $ putStrLn $ "var: " ++ show (Var k)
   mt <- take_sub e k
   case mt of
     Just t  -> wnf e t
     Nothing -> return $ Var k
 
-wnf_cop :: Int -> Env -> Name -> IO Term
-wnf_cop i e k = do
-  when debug $ putStrLn $ "wnf_cop: " ++ show (Cop i k)
+cop :: Int -> Env -> Name -> IO Term
+cop i e k = do
+  when debug $ putStrLn $ "cop: " ++ show (Cop i k)
   mt <- take_sub e k
   case mt of
     Just t  -> wnf e t
     Nothing -> return $ Cop i k
 
-wnf_dup_era :: WnfDup
-wnf_dup_era i e k _ Era = do
+dup_era :: WnfDup
+dup_era i e k _ Era = do
   inc_itrs e
   subst e k Era
   wnf e Era
 
-wnf_dup_sup :: WnfDup
-wnf_dup_sup i e k l (Sup vl va vb)
+dup_sup :: WnfDup
+dup_sup i e k l (Sup vl va vb)
   | l == vl = do
       inc_itrs e
       if i == 0 then do
@@ -491,8 +491,8 @@ wnf_dup_sup i e k l (Sup vl va vb)
         subst e k (Sup vl va0 vb0)
         wnf e (Sup vl va1 vb1)
 
-wnf_dup_lam :: WnfDup
-wnf_dup_lam i e k l (Lam vk vf) = do
+dup_lam :: WnfDup
+dup_lam i e k l (Lam vk vf) = do
   inc_itrs e
   x0      <- fresh e
   x1      <- fresh e
@@ -505,14 +505,14 @@ wnf_dup_lam i e k l (Lam vk vf) = do
     subst e k (Lam x0 g0)
     wnf e (Lam x1 g1)
 
-wnf_dup_nam :: WnfDup
-wnf_dup_nam i e k _ (Nam n) = do
+dup_nam :: WnfDup
+dup_nam i e k _ (Nam n) = do
   inc_itrs e
   subst e k (Nam n)
   wnf e (Nam n)
 
-wnf_dup_dry :: WnfDup
-wnf_dup_dry i e k l (Dry vf vx) = do
+dup_dry :: WnfDup
+dup_dry i e k l (Dry vf vx) = do
   inc_itrs e
   (vf0, vf1) <- clone e l vf
   (vx0, vx1) <- clone e l vx
@@ -523,8 +523,8 @@ wnf_dup_dry i e k l (Dry vf vx) = do
     subst e k (Dry vf0 vx0)
     wnf e (Dry vf1 vx1)
 
-wnf_dup_ctr :: WnfDup
-wnf_dup_ctr i e k l (Ctr kn xs) = do
+dup_ctr :: WnfDup
+dup_ctr i e k l (Ctr kn xs) = do
   inc_itrs e
   (xsA, xsB) <- clone_list e l xs
   if i == 0 then do
@@ -534,8 +534,8 @@ wnf_dup_ctr i e k l (Ctr kn xs) = do
     subst e k (Ctr kn xsA)
     wnf e (Ctr kn xsB)
 
-wnf_dup_mat :: WnfDup
-wnf_dup_mat i e k l (Mat kn h m) = do
+dup_mat :: WnfDup
+dup_mat i e k l (Mat kn h m) = do
   inc_itrs e
   (hA, hB) <- clone e l h
   (mA, mB) <- clone e l m
@@ -546,51 +546,51 @@ wnf_dup_mat i e k l (Mat kn h m) = do
     subst e k (Mat kn hA mA)
     wnf e (Mat kn hB mB)
 
-wnf_app_era :: WnfApp
-wnf_app_era e Era v = do
+app_era :: WnfApp
+app_era e Era v = do
   inc_itrs e
   wnf e Era
 
-wnf_app_nam :: WnfApp
-wnf_app_nam e (Nam fk) v = wnf e (Dry (Nam fk) v)
+app_nam :: WnfApp
+app_nam e (Nam fk) v = wnf e (Dry (Nam fk) v)
 
-wnf_app_dry :: WnfApp
-wnf_app_dry e (Dry ff fx) v = wnf e (Dry (Dry ff fx) v)
+app_dry :: WnfApp
+app_dry e (Dry ff fx) v = wnf e (Dry (Dry ff fx) v)
 
-wnf_app_lam :: WnfApp
-wnf_app_lam e (Lam fx ff) v = do
+app_lam :: WnfApp
+app_lam e (Lam fx ff) v = do
   inc_itrs e
   subst e fx v
   wnf e ff
 
-wnf_app_sup :: WnfApp
-wnf_app_sup e (Sup fL fa fb) v = do
+app_sup :: WnfApp
+app_sup e (Sup fL fa fb) v = do
   inc_itrs e
   (x0,x1) <- clone e fL v
   wnf e (Sup fL (App fa x0) (App fb x1))
 
-wnf_app_mat_era :: WnfApp
-wnf_app_mat_era e f x = do
+app_mat_era :: WnfApp
+app_mat_era e f x = do
   inc_itrs e
   wnf e Era
 
-wnf_app_mat_sup :: WnfApp
-wnf_app_mat_sup e (Mat k h m) (Sup l x y) = do
+app_mat_sup :: WnfApp
+app_mat_sup e (Mat k h m) (Sup l x y) = do
   inc_itrs e
   (h0, h1) <- clone e l h
   (m0, m1) <- clone e l m
   wnf e (Sup l (App (Mat k h0 m0) x) (App (Mat k h1 m1) y))
 
-wnf_app_mat_ctr :: Env -> Term -> Int -> Term -> Term -> Int -> [Term] -> IO Term
-wnf_app_mat_ctr e f k h m k' xs = do
+app_mat_ctr :: Env -> Term -> Int -> Term -> Term -> Int -> [Term] -> IO Term
+app_mat_ctr e f k h m k' xs = do
   inc_itrs e
   if k == k' then do
     wnf e (foldl' App h xs)
   else do
     wnf e (App m (Ctr k' xs))
 
-wnf_ref :: Env -> Name -> IO Term
-wnf_ref e k = do
+ref :: Env -> Name -> IO Term
+ref e k = do
   let (Book m) = env_book e
   case M.lookup k m of
     Just f  -> do
