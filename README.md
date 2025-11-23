@@ -1,6 +1,6 @@
-Calculus of Interactions
-========================
-CoI is a term rewrite system for the following grammar:
+HVM4
+====
+HVM4 is a term rewrite system for the following grammar:
 
 ```
 Term ::=
@@ -24,7 +24,7 @@ Where:
 - `Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $`
 - `[T]  ::= any sequence of T separated by ","`
 
-In CoI:
+In HVM4:
 - Variables are affine; they must occur at most once.
 - Variables range globally; they can occur anywhere.
 

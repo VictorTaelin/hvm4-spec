@@ -149,7 +149,7 @@ get_line :: String -> Int -> String
 get_line src line = nth_line (lines src) line
 
 nth_line :: [String] -> Int -> String
-nth_line [] _ = ""
+nth_line []     _ = ""
 nth_line (x:xs) 1 = x
 nth_line (x:xs) n = nth_line xs (n - 1)
 
@@ -876,3 +876,4 @@ flatten term = bfs [term] [] where
   bfs (t:ts) acc = case t of
     Sup _ a b -> bfs (ts ++ [a, b]) acc
     _         -> bfs ts (t : acc)
+
