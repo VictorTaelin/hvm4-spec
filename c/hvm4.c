@@ -944,7 +944,15 @@ static void do_include(PState *s, char *file) {
     exit(1);
   }
 
-  PState new_s = { .file = SEEN_FILES[SEEN_COUNT-1], .src = src, .pos = 0, .len = strlen(src), .line = 1, .col = 1 };
+  PState new_s = {
+    .file = SEEN_FILES[SEEN_COUNT-1],
+    .src  = src,
+    .pos  = 0,
+    .len  = strlen(src),
+    .line = 1,
+    .col  = 1,
+  };
+
   parse_def(&new_s);
   free(src);
 }
@@ -1127,11 +1135,11 @@ int main() {
   // Create a parser state
   PState s = {
     .file = "inline",
-    .src = (char*)source,
-    .pos = 0,
-    .len = strlen(source),
+    .src  = (char*)source,
+    .pos  = 0,
+    .len  = strlen(source),
     .line = 1,
-    .col = 1
+    .col  = 1
   };
 
   // Parse all definitions
