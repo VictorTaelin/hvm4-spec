@@ -30,3 +30,9 @@
 // solves x * 2 = 4
 //@main = #Z{}
 // NEEDS COLLAPSER
+// ARGS: -C4
+// EXPECT:
+// #Z{}
+// #S{#Z{}}
+// #S{#S{#Z{}}}
+// #S{#S{#S{#Z{}}}}

@@ -807,69 +807,74 @@ snf e d x = do
 -- Collapsing
 -- ==========
 
-collapse :: Env -> Term -> IO Term
-collapse e x = do
-  !x <- wnf e x
-  case x of
+-- The Bool flag controls laziness: True = lazy (for -C), False = strict (for normalization).
+collapse :: Bool -> Env -> Term -> IO Term
+collapse lazy e x = wrap (go x) where
+  wrap = if lazy then unsafeInterleaveIO else id
+  go term = do
+    !x <- wnf e term
+    case x of
 
-    Era -> do
-      return Era
+      Era -> do
+        return Era
 
-    (Sup l a b) -> do
-      a' <- unsafeInterleaveIO (collapse e a)
-      b' <- unsafeInterleaveIO (collapse e b)
-      return $ Sup l a' b'
+      (Sup l a b) -> do
+        a' <- collapse lazy e a
+        b' <- collapse lazy e b
+        return $ Sup l a' b'
 
-    (Lam k f) -> do
-      fV <- fresh e
-      f' <- unsafeInterleaveIO (collapse e f)
-      inject e (Lam fV (Lam k (Var fV))) [f']
+      (Lam k f) -> do
+        fV <- fresh e
+        f' <- collapse lazy e f
+        inject lazy e (Lam fV (Lam k (Var fV))) [f']
 
-    (App f x) -> do
-      fV <- fresh e
-      xV <- fresh e
-      f' <- unsafeInterleaveIO (collapse e f)
-      x' <- unsafeInterleaveIO (collapse e x)
-      inject e (Lam fV (Lam xV (App (Var fV) (Var xV)))) [f', x']
+      (App f x) -> do
+        fV <- fresh e
+        xV <- fresh e
+        f' <- collapse lazy e f
+        x' <- collapse lazy e x
+        inject lazy e (Lam fV (Lam xV (App (Var fV) (Var xV)))) [f', x']
 
-    Nam n -> do
-      return $ Nam n
+      Nam n -> do
+        return $ Nam n
 
-    Dry f x -> do
-      fV <- fresh e
-      xV <- fresh e
-      f' <- unsafeInterleaveIO (collapse e f)
-      x' <- unsafeInterleaveIO (collapse e x)
-      inject e (Lam fV (Lam xV (Dry (Var fV) (Var xV)))) [f', x']
+      Dry f x -> do
+        fV <- fresh e
+        xV <- fresh e
+        f' <- collapse lazy e f
+        x' <- collapse lazy e x
+        inject lazy e (Lam fV (Lam xV (Dry (Var fV) (Var xV)))) [f', x']
 
-    Ctr k xs -> do
-      vs <- mapM (\_ -> fresh e) xs
-      as <- mapM (unsafeInterleaveIO . collapse e) xs
-      inject e (foldr Lam (Ctr k (map Var vs)) vs) as
+      Ctr k xs -> do
+        vs <- mapM (\_ -> fresh e) xs
+        as <- mapM (collapse lazy e) xs
+        inject lazy e (foldr Lam (Ctr k (map Var vs)) vs) as
 
-    Mat k h m -> do
-      hV <- fresh e
-      mV <- fresh e
-      h' <- unsafeInterleaveIO (collapse e h)
-      m' <- unsafeInterleaveIO (collapse e m)
-      inject e (Lam hV (Lam mV (Mat k (Var hV) (Var mV)))) [h', m']
+      Mat k h m -> do
+        hV <- fresh e
+        mV <- fresh e
+        h' <- collapse lazy e h
+        m' <- collapse lazy e m
+        inject lazy e (Lam hV (Lam mV (Mat k (Var hV) (Var mV)))) [h', m']
 
-    x -> do
-      return $ x
+      x -> do
+        return $ x
 
-inject :: Env -> Term -> [Term] -> IO Term
-inject e f [] = return f
-inject e f (h:t) = unsafeInterleaveIO $ do
+inject :: Bool -> Env -> Term -> [Term] -> IO Term
+inject _ _ f [] = return f
+inject lazy e f (h:t) = wrap $ do
   h' <- wnf e h
   case h' of
     Sup l a b -> do
       (f0,f1) <- clone e l f
       (t0,t1) <- clone_list e l t
-      a' <- unsafeInterleaveIO (inject e f0 (a:t0))
-      b' <- unsafeInterleaveIO (inject e f1 (b:t1))
+      a' <- inject lazy e f0 (a:t0)
+      b' <- inject lazy e f1 (b:t1)
       return $ Sup l a' b'
     _ -> do
-      inject e (App f h') t
+      inject lazy e (App f h') t
+  where
+    wrap = if lazy then unsafeInterleaveIO else id
 
 flatten :: Term -> [Term]
 flatten term = bfs [term] where
