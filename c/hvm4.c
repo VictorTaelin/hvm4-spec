@@ -698,7 +698,7 @@ static u32 parse_name(PState *s) {
   u32 k = 0;
   while (is_name_char(peek(s))) {
     c = peek(s);
-    k = ((k << 6) + char_to_b64(c)) & LAB_MASK; // cap to 24 bits to stay inside name space
+    k = ((k << 6) + char_to_b64(c)) & LAB_MASK;
     next(s);
   }
   skip(s);
@@ -900,40 +900,23 @@ static Term parse_term(PState *s) {
 
 static void parse_def(PState *s);
 
-static void do_include(PState *s, char *file) {
-  // Resolve relative paths against the including file's directory
-  char full_path[1024];
-  if (file[0] == '/') {
-    snprintf(full_path, sizeof(full_path), "%s", file);
-  } else if (strchr(file, '/') != NULL) {
-    // Already contains a path; use as provided relative to CWD
-    snprintf(full_path, sizeof(full_path), "%s", file);
+static void path_join(char *out, int size, const char *base, const char *rel) {
+  if (rel[0] == '/' || strchr(rel, '/')) {
+    snprintf(out, size, "%s", rel);
   } else {
-    const char *slash = strrchr(s->file, '/');
+    const char *slash = strrchr(base, '/');
     if (slash) {
-      size_t dir_len = (size_t)(slash - s->file);
-      if (dir_len >= sizeof(full_path)) {
-        error("Include path too long");
-      }
-      memcpy(full_path, s->file, dir_len);
-      full_path[dir_len+0] = '/';
-      full_path[dir_len+1] = 0;
-      strncat(full_path, file, sizeof(full_path) - dir_len - 1);
+      int dir_len = (int)(slash - base);
+      snprintf(out, size, "%.*s/%s", dir_len, base, rel);
     } else {
-      snprintf(full_path, sizeof(full_path), "%s", file);
+      snprintf(out, size, "%s", rel);
     }
   }
+}
 
-  for (int i = 0; i < SEEN_COUNT; i++) {
-    if (strcmp(SEEN_FILES[i], full_path) == 0) return;
-  }
-  SEEN_FILES[SEEN_COUNT++] = strdup(full_path);
-
-  FILE *fp = fopen(full_path, "rb");
-  if (!fp) {
-    fprintf(stderr, "Error: could not open file '%s'\n", full_path);
-    exit(1);
-  }
+static char *file_read(const char *path) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) return NULL;
   fseek(fp, 0, SEEK_END);
   u32 len = ftell(fp);
   fseek(fp, 0, SEEK_SET);
@@ -942,8 +925,26 @@ static void do_include(PState *s, char *file) {
   fread(src, 1, len, fp);
   src[len] = 0;
   fclose(fp);
+  return src;
+}
 
-  PState new_s = { .file = full_path, .src = src, .pos = 0, .len = len, .line = 1, .col = 1 };
+static void do_include(PState *s, char *file) {
+  char path[1024];
+  path_join(path, sizeof(path), s->file, file);
+
+  for (int i = 0; i < SEEN_COUNT; i++) {
+    if (strcmp(SEEN_FILES[i], path) == 0) return;
+  }
+  if (SEEN_COUNT >= 1024) error("MAX_INCLUDES");
+  SEEN_FILES[SEEN_COUNT++] = strdup(path);
+
+  char *src = file_read(path);
+  if (!src) {
+    fprintf(stderr, "Error: could not open file '%s'\n", path);
+    exit(1);
+  }
+
+  PState new_s = { .file = SEEN_FILES[SEEN_COUNT-1], .src = src, .pos = 0, .len = strlen(src), .line = 1, .col = 1 };
   parse_def(&new_s);
   free(src);
 }
