@@ -1,5 +1,3 @@
-//./../haskell/hvm4.hs//
-// 
 // Your goal is to port HVM4 from Haskell (as above) to C, including:
 // - a stringifier for HVM4 terms, fully compatible with the Haskell version
 // - a parser for HVM4 terms, fully compatible with the Haskell version
@@ -307,6 +305,14 @@ static int is_name_char(char c) {
 // Term Constructors
 // =================
 
+static inline Term New(u8 tag, u32 ext, u32 arity, Term *args) {
+  u64 loc = heap_alloc(arity);
+  for (u32 i = 0; i < arity; i++) {
+    HEAP[loc+i] = args[i];
+  }
+  return new_term(0, tag, ext, loc);
+}
+
 static inline Term Var(u32 loc) {
   return new_term(0, VAR, 0, loc);
 }
@@ -331,53 +337,32 @@ static inline Term Co1(u32 label, u32 loc) {
   return new_term(0, CO1, label, loc);
 }
 
-static inline Term App(Term fun, Term arg) {
-  u64 loc = heap_alloc(2);
-  HEAP[loc+0] = fun;
-  HEAP[loc+1] = arg;
-  return new_term(0, APP, 0, loc);
+static inline Term Lam(Term body) {
+  return New(LAM, 0, 1, (Term[]){body});
 }
 
-static inline Term Lam(Term body) {
-  u64 loc = heap_alloc(1);
-  HEAP[loc+0] = body;
-  return new_term(0, LAM, 0, loc);
+static inline Term App(Term fun, Term arg) {
+  return New(APP, 0, 2, (Term[]){fun, arg});
 }
 
 static inline Term Sup(u32 label, Term tm0, Term tm1) {
-  u64 loc = heap_alloc(2);
-  HEAP[loc+0] = tm0;
-  HEAP[loc+1] = tm1;
-  return new_term(0, SUP, label, loc);
+  return New(SUP, label, 2, (Term[]){tm0, tm1});
 }
 
 static inline Term Dry(Term tm0, Term tm1) {
-  u64 loc = heap_alloc(2);
-  HEAP[loc+0] = tm0;
-  HEAP[loc+1] = tm1;
-  return new_term(0, DRY, 0, loc);
+  return New(DRY, 0, 2, (Term[]){tm0, tm1});
 }
 
 static inline Term Dup(u32 label, Term val, Term body) {
-  u64 loc = heap_alloc(2);
-  HEAP[loc+0] = val;
-  HEAP[loc+1] = body;
-  return new_term(0, DUP, label, loc);
+  return New(DUP, label, 2, (Term[]){val, body});
 }
 
 static inline Term Mat(u32 name, Term val, Term next) {
-  u64 loc = heap_alloc(2);
-  HEAP[loc+0] = val;
-  HEAP[loc+1] = next;
-  return new_term(0, MAT, name, loc);
+  return New(MAT, name, 2, (Term[]){val, next});
 }
 
 static inline Term Ctr(u32 name, u32 arity, Term *args) {
-  u64 loc = heap_alloc(arity);
-  for (u32 i = 0; i < arity; i++) {
-    HEAP[loc+i] = args[i];
-  }
-  return new_term(0, CT0 + arity, name, loc);
+  return New(CT0 + arity, name, arity, args);
 }
 
 // Stringifier
@@ -494,23 +479,7 @@ static void print_term_go(Term term, u32 depth) {
       printf("}");
       break;
     }
-    case CT0:
-    case CT1:
-    case CT2:
-    case CT3:
-    case CT4:
-    case CT5:
-    case CT6:
-    case CT7:
-    case CT8:
-    case CT9:
-    case CTA:
-    case CTB:
-    case CTC:
-    case CTD:
-    case CTE:
-    case CTF:
-    case CTG: {
+    case CT0 ... CTG: {
       u32 arity = tag_of(term) - CT0;
       u32 loc = val_of(term);
       printf("#");
@@ -554,9 +523,9 @@ typedef struct {
 } PBind;
 
 static char  *PARSE_SEEN_FILES[1024];
+static u32    PARSE_SEEN_FILES_LEN = 0;
 static PBind  PARSE_BINDS[16384];
 static u32    PARSE_BINDS_LEN = 0;
-static u32    PARSE_SEEN_COUNT = 0;
 
 static void parse_error(PState *s, const char *expected, char detected) {
   fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m (%s:%d:%d)\n", s->file, s->line, s->col);
@@ -874,22 +843,22 @@ static Term parse_term(PState *s, u32 depth) {
 static void do_include(PState *s, const char *filename) {
   char path[1024];
   path_join(path, sizeof(path), s->file, filename);
-  for (u32 i = 0; i < PARSE_SEEN_COUNT; i++) {
+  for (u32 i = 0; i < PARSE_SEEN_FILES_LEN; i++) {
     if (strcmp(PARSE_SEEN_FILES[i], path) == 0) {
       return;
     }
   }
-  if (PARSE_SEEN_COUNT >= 1024) {
+  if (PARSE_SEEN_FILES_LEN >= 1024) {
     error("MAX_INCLUDES");
   }
-  PARSE_SEEN_FILES[PARSE_SEEN_COUNT++] = strdup(path);
+  PARSE_SEEN_FILES[PARSE_SEEN_FILES_LEN++] = strdup(path);
   char *src = file_read(path);
   if (!src) {
     fprintf(stderr, "Error: could not open '%s'\n", path);
     exit(1);
   }
   PState sub = {
-    .file = PARSE_SEEN_FILES[PARSE_SEEN_COUNT - 1],
+    .file = PARSE_SEEN_FILES[PARSE_SEEN_FILES_LEN - 1],
     .src = src,
     .pos = 0,
     .len = strlen(src),
@@ -1379,23 +1348,7 @@ static Term wnf(Term term) {
             next = alo_mat(ls_loc, mat_loc, mat_nam);
             goto enter;
           }
-          case CT0:
-          case CT1:
-          case CT2:
-          case CT3:
-          case CT4:
-          case CT5:
-          case CT6:
-          case CT7:
-          case CT8:
-          case CT9:
-          case CTA:
-          case CTB:
-          case CTC:
-          case CTD:
-          case CTE:
-          case CTF:
-          case CTG: {
+          case CT0 ... CTG: {
             u32 arity = tag_of(book_term) - CT0;
             u32 ctr_loc = val_of(book_term);
             u32 ctr_nam = ext_of(book_term);
@@ -1524,23 +1477,7 @@ static Term wnf(Term term) {
               next = whnf;
               goto enter;
             }
-            case CT0:
-            case CT1:
-            case CT2:
-            case CT3:
-            case CT4:
-            case CT5:
-            case CT6:
-            case CT7:
-            case CT8:
-            case CT9:
-            case CTA:
-            case CTB:
-            case CTC:
-            case CTD:
-            case CTE:
-            case CTF:
-            case CTG: {
+            case CT0 ... CTG: {
               whnf = app_mat_ctr(mat, whnf);
               next = whnf;
               goto enter;
@@ -1573,23 +1510,7 @@ static Term wnf(Term term) {
               next = whnf;
               goto enter;
             }
-            case CT0:
-            case CT1:
-            case CT2:
-            case CT3:
-            case CT4:
-            case CT5:
-            case CT6:
-            case CT7:
-            case CT8:
-            case CT9:
-            case CTA:
-            case CTB:
-            case CTC:
-            case CTD:
-            case CTE:
-            case CTF:
-            case CTG: {
+            case CT0 ... CTG: {
               whnf = dup_ctr(label, loc, side, whnf);
               next = whnf;
               goto enter;
@@ -1675,38 +1596,10 @@ static Term snf(Term term, u32 depth) {
       return term;
     }
     case DUP: {
-      u64 loc = val_of(term);
-      Term val = HEAP[loc];     // Save the dup'd value
-      Term body = HEAP[loc+1];  // Save the body
-      // First normalize the dup'd value
-      HEAP[loc] = snf(val, depth);
-      // Substitute the dup variable by a NAM with depth+1 as name (matching printer)
-      // We need to put the substitution where the dup'd expr was
-      HEAP[loc] = mark_sub(Nam(depth + 1));
-      // Now normalize the body with increased depth
-      body = snf(body, depth + 1);
-      // Restore the normalized dup'd value
-      HEAP[loc] = snf(val, depth);
-      HEAP[loc+1] = body;
-      return term;
+      printf("TODO\n");
+      abort();
     }
-    case CT0:
-    case CT1:
-    case CT2:
-    case CT3:
-    case CT4:
-    case CT5:
-    case CT6:
-    case CT7:
-    case CT8:
-    case CT9:
-    case CTA:
-    case CTB:
-    case CTC:
-    case CTD:
-    case CTE:
-    case CTF:
-    case CTG: {
+    case CT0 ... CTG: {
       u32 arity = tag_of(term) - CT0;
       u64 loc = val_of(term);
       for (u32 i = 0; i < arity; i++) {
