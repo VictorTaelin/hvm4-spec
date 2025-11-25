@@ -89,8 +89,8 @@ instance Show Book where
 show_dups  :: IM.IntMap (Lab, Term) -> String
 show_dups  m = unlines [ "! " ++ int_to_name k ++ " &" ++ int_to_name l ++ " = " ++ show v | (k, (l, v)) <- IM.toList m ]
 
-show_subst :: IM.IntMap Term -> String
-show_subst m = unlines [ int_to_name (k `div` 4) ++ suffix (k `mod` 4) ++ " ← " ++ show v | (k, v) <- IM.toList m ]
+show_subst :: IM.IntMap (Int,Term) -> String
+show_subst m = unlines [ int_to_name (k `div` 4) ++ suffix (k `mod` 4) ++ " ← " ++ show v | (k, (_,v)) <- IM.toList m ]
   where suffix x = case x of { 0 -> "" ; 1 -> "₀" ; 2 -> "₁" ; _ -> "?" }
 
 -- Name Encoding/Decoding
@@ -529,6 +529,12 @@ clone_list e l (h:t) = do
   (t0, t1) <- clone_list e l t
   return (h0:t0, h1:t1)
 
+merge_sub :: IM.IntMap (Int, Term) -> IM.IntMap (Int, Term) -> IM.IntMap (Int, Term)
+merge_sub = IM.unionWith (\(c0, v0) (c1, v1) -> (min c0 c1, if c1 /= 0 then v1 else v0))
+
+merge_dup :: IM.IntMap (Lab, Term) -> IM.IntMap (Lab, Term) -> IM.IntMap (Lab, Term)
+merge_dup = IM.union
+
 -- WNF: Weak Normal Form
 -- =====================
 
@@ -802,13 +808,22 @@ snf e d x = do
       return $ Ctr k xs'
 
     Mat k h m -> do
-      sub <- readIORef (env_subst e)
-      dup <- readIORef (env_dups e)
-      h'  <- snf e d h
-      -- Normalize the second branch with the original environment (avoid cross-branch consumption).
-      writeIORef (env_subst e) sub
-      writeIORef (env_dups e) dup
+      sub0 <- readIORef (env_subst e)
+      dup0 <- readIORef (env_dups e)
+
+      h' <- snf e d h
+      sub_h <- readIORef (env_subst e)
+      dup_h <- readIORef (env_dups e)
+
+      writeIORef (env_subst e) sub0
+      writeIORef (env_dups e) dup0
+
       m' <- snf e d m
+      sub_m <- readIORef (env_subst e)
+      dup_m <- readIORef (env_dups e)
+
+      writeIORef (env_subst e) (merge_sub sub_h sub_m)
+      writeIORef (env_dups e) (merge_dup dup_h dup_m)
       return $ Mat k h' m'
 
     Alo s t -> do
@@ -860,8 +875,23 @@ collapse e x = do
     Mat k h m -> do
       hV <- fresh e
       mV <- fresh e
+      sub0 <- readIORef (env_subst e)
+      dup0 <- readIORef (env_dups e)
+
       h' <- collapse e h
+      sub_h <- readIORef (env_subst e)
+      dup_h <- readIORef (env_dups e)
+
+      writeIORef (env_subst e) sub0
+      writeIORef (env_dups e) dup0
+
       m' <- collapse e m
+      sub_m <- readIORef (env_subst e)
+      dup_m <- readIORef (env_dups e)
+
+      writeIORef (env_subst e) (merge_sub sub_h sub_m)
+      writeIORef (env_dups e) (merge_dup dup_h dup_m)
+
       inject e (Lam hV (Lam mV (Mat k (Var hV) (Var mV)))) [h', m']
 
     x -> do
