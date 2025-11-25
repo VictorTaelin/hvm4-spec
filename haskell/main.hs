@@ -19,7 +19,7 @@ eval_term bk term normalize = do
   !ini <- getCPUTime
   let lazy_collapse = not normalize
   val <- collapse lazy_collapse env (Alo [] term)
-  when normalize $ force_term val
+  when normalize $ force val
   !val <- if normalize then snf env 1 val else return val
   !end <- getCPUTime
   !itr <- readIORef (env_itrs env)
