@@ -54,7 +54,7 @@ data Env = Env
   { env_book  :: !Book
   , env_itrs  :: !(IORef Int)
   , env_fresh :: !(IORef Int)
-  , env_subst :: !(IORef (IM.IntMap Term))
+  , env_subst :: !(IORef (IM.IntMap (Int, Term)))
   , env_dups  :: !(IORef (IM.IntMap (Lab, Term)))
   }
 
@@ -480,14 +480,17 @@ fresh e = do
 take_dup :: Env -> Name -> IO (Maybe (Lab, Term))
 take_dup e k = atomicModifyIORef' (env_dups  e) $ \m -> (IM.delete k m, IM.lookup k m)
 
-take_sub :: Env -> Name -> IO (Maybe Term)
-take_sub e k = atomicModifyIORef' (env_subst e) $ \m -> (IM.delete k m, IM.lookup k m)
+take_sub :: Env -> Name -> IO (Maybe (Int, Term))
+take_sub e k = atomicModifyIORef' (env_subst e) $ \m -> do
+  let res = IM.lookup k m
+      m'  = maybe m (\x -> IM.insert k (0, snd x) m) res
+  (m', res)
 
 make_dup :: Env -> Name -> Lab -> Term -> IO ()
 make_dup e k l v = modifyIORef' (env_dups  e) (IM.insert k (l, v))
 
 subst :: Env -> Name -> Term -> IO ()
-subst e k v = modifyIORef' (env_subst e) (IM.insert k v)
+subst e k v = modifyIORef' (env_subst e) (IM.insert k (1, v))
 
 -- Quoting
 -- =======
@@ -601,7 +604,8 @@ var e k = do
   when debug $ putStrLn $ "var: " ++ show (Var k)
   mt <- take_sub e k
   case mt of
-    Just t  -> wnf e t
+    Just (1, t) -> wnf e t
+    Just (_, t) -> error $ "double use of var " ++ int_to_name k
     Nothing -> return $ Var k
 
 cop :: Int -> Env -> Name -> IO Term
@@ -609,7 +613,8 @@ cop i e k = do
   when debug $ putStrLn $ "cop: " ++ show (Cop i k)
   mt <- take_sub e k
   case mt of
-    Just t  -> wnf e t
+    Just (1, t)  -> wnf e t
+    Just (_, t) -> error $ "double use of cop " ++ int_to_name k
     Nothing -> return $ Cop i k
 
 dup_era :: WnfDup
@@ -797,7 +802,12 @@ snf e d x = do
       return $ Ctr k xs'
 
     Mat k h m -> do
-      h' <- snf e d h
+      sub <- readIORef (env_subst e)
+      dup <- readIORef (env_dups e)
+      h'  <- snf e d h
+      -- Normalize the second branch with the original environment (avoid cross-branch consumption).
+      writeIORef (env_subst e) sub
+      writeIORef (env_dups e) dup
       m' <- snf e d m
       return $ Mat k h' m'
 
@@ -877,4 +887,3 @@ flatten term = bfs [term] [] where
   bfs (t:ts) acc = case t of
     Sup _ a b -> bfs (ts ++ [a, b]) acc
     _         -> bfs ts (t : acc)
-
