@@ -1,3 +1,211 @@
+// HVM4 Runtime Implementation in C
+// =================================
+//
+// This file implements the HVM4, an Interaction Calculus runtime, ported from
+// Haskell. It includes parsing, stringification, and a stack-based weak normal
+// form (WNF) evaluator with all interaction rules.
+//
+// Term Pointer Layout (64-bit)
+// ----------------------------
+// | SUB  (1 bit)   ::= marks heap slot as containing a substitution
+// | TAG  (7 bits)  ::= constructor variant (APP, LAM, SUP, etc.)
+// | EXT  (24 bits) ::= dup label, ctr name, or ref name
+// | VAL  (32 bits) ::= heap address or unboxed value
+//
+// Tag Encoding
+// ------------
+// - CO0/CO1: Two tags for Cop (copy) nodes, representing sides 0 and 1
+// - CT0-CTG: Constructor tags encode arity directly (CT0+n for n fields, max 16)
+// - Names (variable, constructor, reference) use 6-char base64 strings encoded
+//   as 24-bit integers fitting in the EXT field
+//
+// Memory Model (No Separate Maps)
+// -------------------------------
+// Unlike the Haskell version which uses IntMaps for 'dups' and 'subs', this
+// implementation stores everything directly on the heap:
+//
+// - DUP nodes: Stored inline on heap. CO0/CO1 point to a dup node holding the
+//   duplicated expression (label stored in CO0/CO1's EXT field).
+//
+// - Substitutions: Stored where the lambda's body, or duplicator expression,
+//   was. When app_lam fires, the argument replaces the lambda body slot. The
+//   SUB bit distinguishes actual terms from substitutions, allowing VAR, CO0
+//   and CO1 to detect whether their target is a binding node or a subst.
+//
+// Book vs Runtime Term Representation
+// -----------------------------------
+// Book terms (parsed definitions) use de Bruijn indices and are immutable:
+//   - VAR: ext = 0         ; val = bru_index
+//   - CO_: ext = dup_label ; val = bru_index
+//   - LAM: ext = bru_depth ; val = body_location
+//   - DUP: ext = dup_label ; val = expr_location
+//
+// Runtime terms (after ALO allocation) use heap locations:
+//   - VAR : ext = 0         ; val = binding_lam_body_location
+//   - CO_ : ext = dup_label ; val = binding_dup_expr_location
+//   - LAM : ext = 0         ; val = expr_location
+//   - DUP : ext = 0         ; val = expr_location
+//
+// ALO (Allocation) Nodes
+// ----------------------
+// ALO terms reference immutable book entries and lazily convert them to
+// runtime terms. Each ALO stores a pair (bind_list, book_term_loc) packed
+// into a single 64-bit heap word:
+//   - Low 32 bits: book term location
+//   - High 32 bits: bind list head (linked list of binder locations)
+//
+// The bind list maps de Bruijn levels to runtime heap locations of binding
+// LAM/DUP nodes. When an ALO interaction occurs, one layer of the book term
+// is extracted and converted to a runtime term.
+//
+// Stack-Based WNF Evaluator
+// -------------------------
+//   To avoid stack overflow, WNF uses an explicit stack with two phases:
+//
+//   REDUCE phase: Push eliminators onto stack and descend into their targets
+//     - APP: push frame, enter function
+//     - MAT: push frame, enter scrutinee (after MAT reaches head position)
+//     - CO0/CO1: push frame, enter dup'd expression
+//
+//   APPLY phase: Pop frames and dispatch interactions based on WHNF result
+//
+//   DUP and ALO don't push stack frames since they immediately trigger their
+//   respective interactions without requiring sub-WNF results first.
+//
+// Internal-Only Constructs
+// ------------------------
+// These nodes are internal and not parseable:
+// - ALO: lazy alloc
+// - NAM: stuck var
+// - DRY: stuck app
+//
+// Collapse Function
+// -----------------
+// Extracts superpositions (SUP) to the top level. For each term type:
+// 1. Collapse subterms recursively
+// 2. Build a template: nested lambdas that reconstruct the term
+// 3. Call inject(template, collapsed_subterms)
+// This will move the term to inside SUP layers, 'collapsing' it.
+//
+// Key: VARs in templates must point to their binding lambda's body location.
+// For LAM, the inner lambda MUST reuse lam_loc so existing VARs stay bound.
+//
+// Style Guide
+// -----------
+// Abide to the guidelines below strictly!
+//
+// > NEVER write single-line ifs, loops, statements, functions.
+//
+//   Don't:
+//     if { ... }
+//     while { ... }
+//     u32 foo(x) { ... }
+//     foo(); bar();
+//
+//   Do:
+//     if {
+//       ...
+//     }
+//     while {
+//       ...
+//     }
+//     u32 foo(x) {
+//       ...
+//     }
+//     foo();
+//     bar();
+//
+// > ALWAYS use switch for Term pattern matching.
+//
+//   Don't:
+//     if (tag == FOO) {
+//       ...
+//     } else if (tag == BAR) {
+//       ...
+//     } ...
+//
+//   Do:
+//     switch (tag) {
+//       case FOO: {
+//         ...
+//       }
+//       case BAR: {
+//         ...
+//       }
+//     }
+//
+// > Aggressively abstract common patterns (DRY).
+//
+//   When a pattern is repeated in multiple places:
+//
+//   Don't:
+//     fn Term <many_fns>(...) {
+//       ...
+//       if (side == 0) {
+//         HEAP[loc] = mark_sub(res1);
+//         return res0;
+//       } else {
+//         HEAP[loc] = mark_sub(res0);
+//         return res1;
+//       }
+//    }
+//
+//   Do:
+//     fn Term subst_dup(u8 side, u32 loc, Term r0, Term r1) {
+//       HEAP[loc] = mark_sub(side == 0 ? r1 : r0);
+//       return side == 0 ? r0 : r1;
+//     }
+//     fn Term <many_fns>(...) {
+//       ...
+//       return subst_dup(side, loc, res0, res1);
+//     }
+//
+//   In general, spend some time reasoning about opportunities to apply the DRY
+//   principle, extracting common patterns out to reduce code size. We greatly
+//   appreciate simplicity brought by good abstractions!
+//
+// > Align columns whenever reasonable; adjust names as needed.
+//
+//   Don't:
+//
+//   Term abc = foo;
+//   u32 x = 123;
+//   Term the_amazing_cat = bar;
+//
+//   Do:
+//
+//   Term abc = foo;
+//   u32  x   = 123;
+//   Term cat = bar;
+//
+//   Don't:
+//
+//   foo[x] = 123;
+//   foo[x+1] = 456;
+//
+//   Do:
+//
+//   foo[x+0] = 123;
+//   foo[x+1] = 456;
+//
+// > Separate sessions with markdown-inspired headers.
+//
+//   Don't:
+//
+//   ---------------------------------
+//   File Session
+//   ---------------------------------
+//
+//   Do:
+//
+//   File Session
+//   ============
+//
+//   File Sub-Session
+//   ----------------
+//
+//   ### File Sub-Sub-Session
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -1081,6 +1289,13 @@ fn Term alo_lam(u32 ls_loc, u32 book_body_loc) {
   return new_term(0, LAM, 0, lam_body);
 }
 
+fn Term alo_dup(u32 ls_loc, u32 book_loc, u32 lab) {
+  u64 dup_val   = heap_alloc(1);
+  u32 new_bind  = make_bind(ls_loc, (u32)dup_val, lab);
+  HEAP[dup_val] = make_alo(ls_loc, book_loc + 0);
+  return Dup(lab, make_alo(ls_loc, book_loc + 0), make_alo(new_bind, book_loc + 1));
+}
+
 fn Term alo_node(u32 ls_loc, u32 loc, u8 tag, u32 ext, u32 ari) {
   Term args[16];
   for (u32 i = 0; i < ari; i++) {
@@ -1089,12 +1304,6 @@ fn Term alo_node(u32 ls_loc, u32 loc, u8 tag, u32 ext, u32 ari) {
   return New(tag, ext, ari, args);
 }
 
-fn Term alo_dup(u32 ls_loc, u32 book_loc, u32 lab) {
-  u64 dup_val   = heap_alloc(1);
-  u32 new_bind  = make_bind(ls_loc, (u32)dup_val, lab);
-  HEAP[dup_val] = make_alo(ls_loc, book_loc + 0);
-  return Dup(lab, make_alo(ls_loc, book_loc + 0), make_alo(new_bind, book_loc + 1));
-}
 
 // WNF
 // ===
@@ -1701,34 +1910,30 @@ int main(void) {
 
   // Book with all definitions needed by tests
   const char *book =
-    // Church booleans
     "@true = λt.λf.t\n"
     "@fals = λt.λf.f\n"
     "@not  = λb.λt.λf.b(f,t)\n"
-    // Church numerals
-    "@c1 = λs.λx.s(x)\n"
-    "@c2 = λs.!S&C=s;λx.S₀(S₁(x))\n"
-    "@c4 = λs.!S&C=s;!T&C=λx.S₀(S₁(x));λy.T₀(T₁(y))\n"
-    "@c8 = λs.!S&C=s;!T&C=λx.S₀(S₁(x));!U&C=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
-    "@k2 = λs.!S&K=s;λx.S₀(S₁(x))\n"
-    "@k4 = λs.!S&K=s;!T&K=λx.S₀(S₁(x));!U&K=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
-    "@k8 = λs.!S&K=s;!T&K=λx.S₀(S₁(x));!U&K=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
-    "@add = λa.λb.λs.λz.!S&B=s;a(S₀,b(S₁,z))\n"
-    "@mul = λa.λb.λs.λz.a(b(s),z)\n"
-    "@exp = λa.λb.b(a)\n"
-    // Scott naturals
-    "@n0 = #Z{}\n"
-    "@n1 = #S{#Z{}}\n"
-    "@n2 = #S{#S{#Z{}}}\n"
-    "@n3 = #S{#S{#S{#Z{}}}}\n"
-    "@n4 = #S{#S{#S{#S{#Z{}}}}}\n"
+    "@c1   = λs.λx.s(x)\n"
+    "@c2   = λs.!S&C=s;λx.S₀(S₁(x))\n"
+    "@c4   = λs.!S&C=s;!T&C=λx.S₀(S₁(x));λy.T₀(T₁(y))\n"
+    "@c8   = λs.!S&C=s;!T&C=λx.S₀(S₁(x));!U&C=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
+    "@k2   = λs.!S&K=s;λx.S₀(S₁(x))\n"
+    "@k4   = λs.!S&K=s;!T&K=λx.S₀(S₁(x));!U&K=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
+    "@k8   = λs.!S&K=s;!T&K=λx.S₀(S₁(x));!U&K=λy.T₀(T₁(y));λz.U₀(U₁(z))\n"
+    "@add  = λa.λb.λs.λz.!S&B=s;a(S₀,b(S₁,z))\n"
+    "@mul  = λa.λb.λs.λz.a(b(s),z)\n"
+    "@exp  = λa.λb.b(a)\n"
+    "@n0   = #Z{}\n"
+    "@n1   = #S{#Z{}}\n"
+    "@n2   = #S{#S{#Z{}}}\n"
+    "@n3   = #S{#S{#S{#Z{}}}}\n"
+    "@n4   = #S{#S{#S{#S{#Z{}}}}}\n"
     "@nadd = λ{#Z:λb.b; #S:λp.λb.#S{@nadd(p,b)}; &{}}\n"
     "@nmul = λ{#Z:λb.#Z{}; #S:λp.λb.!B&M=b;@nadd(B₀,@nmul(p,B₁)); &{}}\n"
     "@ndbl = λ{#Z:#Z{}; #S:λp.#S{#S{@ndbl(p)}}; &{}}\n"
     "@nsum = λ{#Z:#Z{}; #S:λp.!P&S=p;#S{@nadd(P₀,@nsum(P₁))}; &{}}\n"
     "@fib  = λ{#Z:#Z{}; #S:λ{#Z:#S{#Z{}}; #S:λp.!P&F=p;@nadd(@fib(#S{P₀}),@fib(P₁)); &{}}; &{}}\n"
     "@fac  = λ{#Z:#S{#Z{}}; #S:λp.!P&F=p;@nmul(#S{P₀},@fac(P₁)); &{}}\n"
-    // Other
     "@swap = λ{#P:λa.λb.#P{b,a}; &{}}\n"
     "@inc  = λx.#S{x}\n"
     "@map  = λf.λ{#Nil:#Nil{}; #Cons:λh.λt.!F&M=f;#Cons{F₀(h),@map(F₁,t)}; &{}}\n"
@@ -1763,7 +1968,7 @@ int main(void) {
   // Scott natural tests
   test("ndbl_4", "@main = @ndbl(@n4)", "#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}", 0);
   test("nsum_4", "@main = @nsum(@n4)", "#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}", 0);
-  test("fib_6",  "@main = @fib(@nadd(@n3,@n3))", "#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}", 0);
+  test("fib_6",  "@main = @fib(@nadd(@n3,@n4))", "#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}", 0);
   test("fac_3",  "@main = @fac(@n3)", "#S{#S{#S{#S{#S{#S{#Z{}}}}}}}", 0);
 
   // Other tests
