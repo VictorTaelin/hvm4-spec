@@ -43,9 +43,10 @@ data Term
   | Ctr Name [Term]
   | Mat Name Term Term
   | Alo [Name] Term
-  | DSp Term Term Term
-  | DDp Term Term Term
+  | Dsp Term Term Term
+  | Ddp Term Term Term
   | Num Int
+  | Suc Term
   | Sp0 Term
   | Sp1 Term
   deriving (Eq)

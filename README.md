@@ -19,7 +19,7 @@ Term ::=
 | App ::= "(" Term " " Term ")"
 | Alo ::= "@" "{" [Name] "}" Term
 | DSp ::= "&" "(" Term ")" "{" Term "," Term "}"
-| DDp ::= "!" Name "&" "(" Term ")" "=" Term ";" Term
+| DDp ::= "!" "&" "(" Term ")" "=" Term ";" Term
 | Num ::= Number
 | Sp0 ::= "/Sp0" "(" Term ")"
 | Sp1 ::= "/Sp1" "(" Term ")"
@@ -27,8 +27,9 @@ Term ::=
 ```
 
 Where:
-- `Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $`
-- `[T]  ::= any sequence of T separated by ","`
+- `Name   ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $`
+- `Number ::= any sequence of digits 0-9`
+- `[T]    ::= any sequence of T separated by ","`
 
 In HVM4:
 - Variables are affine; they must occur at most once.
