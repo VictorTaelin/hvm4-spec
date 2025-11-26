@@ -488,7 +488,7 @@ make_dup :: Env -> Name -> Lab -> Term -> IO ()
 make_dup e k l v = modifyIORef' (env_dups  e) (IM.insert k (l, v))
 
 subst :: Env -> Name -> Term -> IO ()
-subst e k v = modifyIORef' (env_subst e) (IM.insert k v)
+subst e k !v = modifyIORef' (env_subst e) (IM.insert k v)
 
 -- Quoting
 -- =======
@@ -535,7 +535,6 @@ type WnfDup = Int -> Env -> Name -> Lab -> Term -> IO Term
 
 wnf :: Env -> Term -> IO Term
 wnf e term = do
-  when debug $ putStrLn $ "wnf: " ++ show term
   case term of
     Var k -> do
       var e k
@@ -854,6 +853,9 @@ collapse e x = unsafeInterleaveIO $ do
       h' <- collapse e h
       m' <- collapse e m
       inject e (Lam hV (Lam mV (Mat k (Var hV) (Var mV)))) [h', m']
+
+    x -> do
+      return x
 
 inject :: Env -> Term -> [Term] -> IO Term
 inject e f [] = return f
