@@ -55,7 +55,7 @@ data Env = Env
   , env_itrs  :: !(IORef Int)
   , env_fresh :: !(IORef Int)
   , env_subst :: !(IORef (IM.IntMap (Int, Term)))
-  , env_dups  :: !(IORef (IM.IntMap (Lab, Term)))
+  , env_dups  :: !(IORef (IM.IntMap (Int, (Lab, Term))))
   }
 
 -- Showing
@@ -477,8 +477,14 @@ fresh e = do
   writeIORef (env_fresh e) (n + 1)
   return ((n `shiftL` 6) + 63)
 
-take_dup :: Env -> Name -> IO (Maybe (Lab, Term))
-take_dup e k = atomicModifyIORef' (env_dups  e) $ \m -> (IM.delete k m, IM.lookup k m)
+take_dup :: Env -> Int -> Name -> IO (Maybe (Int, (Lab, Term)))
+take_dup e s k = atomicModifyIORef' (env_dups e) $ \m ->
+  case IM.lookup k m of
+    Nothing        -> (m, Nothing)
+    Just (2, v)    -> (IM.insert k (s, v) m, Just (2, v))                 -- first use
+    Just (prev, v)
+      | prev == s  -> error $ "double use of Dup var " ++ int_to_name k ++ (if s == 0 then "₀" else "₁")
+      | otherwise  -> (IM.insert k (-1, v) m, Just (prev, v))             -- opposite side ⇒ exhausted
 
 take_sub :: Env -> Name -> IO (Maybe (Int, Term))
 take_sub e k = atomicModifyIORef' (env_subst e) $ \m -> do
@@ -487,7 +493,7 @@ take_sub e k = atomicModifyIORef' (env_subst e) $ \m -> do
   (m', res)
 
 make_dup :: Env -> Name -> Lab -> Term -> IO ()
-make_dup e k l v = modifyIORef' (env_dups  e) (IM.insert k (l, v))
+make_dup e k l v = modifyIORef' (env_dups e) (IM.insert k (2, (l, v)))
 
 subst :: Env -> Name -> Term -> IO ()
 subst e k v = modifyIORef' (env_subst e) (IM.insert k (1, v))
@@ -532,8 +538,33 @@ clone_list e l (h:t) = do
 merge_sub :: IM.IntMap (Int, Term) -> IM.IntMap (Int, Term) -> IM.IntMap (Int, Term)
 merge_sub = IM.unionWith (\(c0, v0) (c1, v1) -> (min c0 c1, if c1 /= 0 then v1 else v0))
 
-merge_dup :: IM.IntMap (Lab, Term) -> IM.IntMap (Lab, Term) -> IM.IntMap (Lab, Term)
-merge_dup = IM.union
+merge_dup :: IM.IntMap (Int, (Lab, Term)) -> IM.IntMap (Int, (Lab, Term)) -> IM.IntMap (Int, (Lab, Term))
+merge_dup = IM.unionWith $ \(c0, v0) (c1, v1) -> (pick c0 c1, v0)
+  where pick c0 c1
+          | c0 `elem` [-1,2] || c1 `elem` [-1,2] = min c0 c1
+          | c0 == c1 = c0
+          | otherwise = -1
+
+run_mat_branches :: Env -> IO a -> IO b -> IO (a, b)
+run_mat_branches e left right = do
+  sub0 <- readIORef (env_subst e)
+  dup0 <- readIORef (env_dups e)
+
+  a <- left
+  sub_a <- readIORef (env_subst e)
+  dup_a <- readIORef (env_dups e)
+
+  writeIORef (env_subst e) sub0
+  writeIORef (env_dups e) dup0
+
+  b <- right
+  sub_b <- readIORef (env_subst e)
+  dup_b <- readIORef (env_dups e)
+
+  writeIORef (env_subst e) (merge_sub sub_a sub_b)
+  writeIORef (env_dups e) (merge_dup dup_a dup_b)
+
+  return (a, b)
 
 -- WNF: Weak Normal Form
 -- =====================
@@ -548,9 +579,9 @@ wnf e term = do
     Var k -> do
       var e k
     Cop s k -> do
-      got <- take_dup e k
+      got <- take_dup e s k
       case got of
-        Just (l, v) -> do
+        Just (2, (l, v)) -> do
           v <- wnf e v
           case v of
             Era   -> dup_era s e k l v
@@ -561,8 +592,10 @@ wnf e term = do
             Ctr{} -> dup_ctr s e k l v
             Mat{} -> dup_mat s e k l v
             _     -> return (Dup k l v (Cop s k))
-        Nothing -> do
-          cop s e k
+        Just (s', (l, v)) -> do
+          cop s s' e k
+        Nothing ->
+          error $ "unbound Dup variable " ++ int_to_name k ++ (if s == 0 then "₀" else "₁")
     App f x -> do
       f <- wnf e f
       case f of
@@ -614,9 +647,10 @@ var e k = do
     Just (_, t) -> error $ "double use of var " ++ int_to_name k
     Nothing -> return $ Var k
 
-cop :: Int -> Env -> Name -> IO Term
-cop i e k = do
+cop :: Int -> Int -> Env -> Name -> IO Term
+cop i i' e k = do
   when debug $ putStrLn $ "cop: " ++ show (Cop i k)
+  when (i == i' || i' == -1) $ error $ "double use of Dup var " ++ int_to_name k ++ (if i == 0 then "₀" else "₁")
   mt <- take_sub e k
   case mt of
     Just (1, t)  -> wnf e t
@@ -808,22 +842,7 @@ snf e d x = do
       return $ Ctr k xs'
 
     Mat k h m -> do
-      sub0 <- readIORef (env_subst e)
-      dup0 <- readIORef (env_dups e)
-
-      h' <- snf e d h
-      sub_h <- readIORef (env_subst e)
-      dup_h <- readIORef (env_dups e)
-
-      writeIORef (env_subst e) sub0
-      writeIORef (env_dups e) dup0
-
-      m' <- snf e d m
-      sub_m <- readIORef (env_subst e)
-      dup_m <- readIORef (env_dups e)
-
-      writeIORef (env_subst e) (merge_sub sub_h sub_m)
-      writeIORef (env_dups e) (merge_dup dup_h dup_m)
+      (h', m') <- run_mat_branches e (snf e d h) (snf e d m)
       return $ Mat k h' m'
 
     Alo s t -> do
@@ -875,23 +894,7 @@ collapse e x = do
     Mat k h m -> do
       hV <- fresh e
       mV <- fresh e
-      sub0 <- readIORef (env_subst e)
-      dup0 <- readIORef (env_dups e)
-
-      h' <- collapse e h
-      sub_h <- readIORef (env_subst e)
-      dup_h <- readIORef (env_dups e)
-
-      writeIORef (env_subst e) sub0
-      writeIORef (env_dups e) dup0
-
-      m' <- collapse e m
-      sub_m <- readIORef (env_subst e)
-      dup_m <- readIORef (env_dups e)
-
-      writeIORef (env_subst e) (merge_sub sub_h sub_m)
-      writeIORef (env_dups e) (merge_dup dup_h dup_m)
-
+      (h', m') <- run_mat_branches e (collapse e h) (collapse e m)
       inject e (Lam hV (Lam mV (Mat k (Var hV) (Var mV)))) [h', m']
 
     x -> do
