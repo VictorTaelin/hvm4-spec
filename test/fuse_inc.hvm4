@@ -1,0 +1,34 @@
+// Fuse_Inc: A minimal example of Optimal Evaluation
+// Computes ~1m calls to inc(x) in 6876 interactions
+
+@O = λx. λo. λi. λe. o(x)
+@I = λx. λo. λi. λe. i(x)
+@E =     λo. λi. λe. e
+
+@inc = λxs.
+  λo. λi. λe. xs(i, λp.o(@inc(p)), e)
+
+@rep = λ{
+  #E: λf. λx. x
+  #O: λp. λf. λx.
+    ! F &A = f;
+    @rep(p, λk.F₀(F₁(k)), x)
+  #I: λp. λf. λx.
+    ! G &A = f;
+    ! F &A = G₀;
+    @rep(p, λk.F₀(F₁(k)), G₁(x))
+}
+
+@sbin_to_bin = λxs.
+  xs( λp.#O{@sbin_to_bin(p)}
+    , λp.#I{@sbin_to_bin(p)}
+    , #E{})
+
+@sbin_zero_32 =
+  @rep(#O{#O{#O{#O{#O{#I{#E{}}}}}}}, λx.@O(x), @E)
+
+@bin_1048576 =
+  #O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#O{#I{#E{}}}}}}}}}}}}}}}}}}}}}}}
+
+@main =
+  @sbin_to_bin(@rep(@bin_1048576, @inc, @sbin_zero_32))
