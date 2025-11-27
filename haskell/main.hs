@@ -73,9 +73,8 @@ main = do
   case coll of
     Nothing -> print val
     Just lim -> do
-      print val
---       let terms = flatten val
---       forM_ (maybe terms (`take` terms) lim) print
+      let terms = flatten val
+      forM_ (maybe terms (`take` terms) lim) print
 
   when stats $ do
     putStrLn $ "- Itrs: " ++ show itrs ++ " interactions"
