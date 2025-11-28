@@ -1671,53 +1671,10 @@ fn Term collapse(Term term) {
       return inject(template, args, 1);
     }
 
-    case APP:
-    case DRY:
-    case MAT: {
-      // Template: λaV. λbV. T(aV, bV) where T is APP/DRY/MAT
-      u64  loc = val(term);
-      Term a   = collapse(HEAP[loc + 0]);
-      Term b   = collapse(HEAP[loc + 1]);
-
-      u64 aV_loc = heap_alloc(1);
-      u64 bV_loc = heap_alloc(1);
-      Term aV = new_term(0, VAR, 0, aV_loc);
-      Term bV = new_term(0, VAR, 0, bV_loc);
-
-      Term inner;
-      switch (tag(term)) {
-        case APP: {
-          inner = App(aV, bV);
-          break;
-        }
-        case DRY: {
-          inner = Dry(aV, bV);
-          break;
-        }
-        case MAT: {
-          inner = Mat(ext(term), aV, bV);
-          break;
-        }
-        default: {
-          inner = App(aV, bV);
-          break;
-        }
-      }
-
-      HEAP[bV_loc] = inner;
-      Term inner_lam = new_term(0, LAM, 0, bV_loc);
-      HEAP[aV_loc] = inner_lam;
-      Term template = new_term(0, LAM, 0, aV_loc);
-
-      Term args[2] = { a, b };
-      return inject(template, args, 2);
-    }
-
-    case CTR ... CTR + CTR_MAX_ARI: {
-      // Haskell: inject (foldr Lam (Ctr k (map Var vs)) vs) as
-      // Template: λv0. λv1. ... Ctr(Var v0, Var v1, ...)
-      u32 ari = tag(term) - CTR;
-      u32 nam = ext(term);
+    default: {
+      // Generic case for APP, DRY, MAT, CTR, etc.
+      // Template: λv0. λv1. ... T(Var v0, Var v1, ...)
+      u32 ari = arity_of(term);
       u64 loc = val(term);
 
       if (ari == 0) {
@@ -1742,14 +1699,11 @@ fn Term collapse(Term term) {
         vars[i] = new_term(0, VAR, 0, lam_locs[i]);
       }
 
-      // Build the Ctr with vars
-      Term ctr = Ctr(nam, ari, vars);
+      // Build the node with vars using arity-generic constructor
+      Term node = New(tag(term), ext(term), ari, vars);
 
       // Build nested lambdas from inside out
-      // λv0. (λv1. (... (Ctr ...)))
-      // Last lambda (innermost) has body = ctr
-      // Each outer lambda has body = the lambda inside it
-      Term body = ctr;
+      Term body = node;
       for (int32_t i = ari - 1; i >= 0; i--) {
         HEAP[lam_locs[i]] = body;
         body = new_term(0, LAM, 0, lam_locs[i]);
@@ -1757,10 +1711,6 @@ fn Term collapse(Term term) {
       Term template = body;
 
       return inject(template, collapsed, ari);
-    }
-
-    default: {
-      return term;
     }
   }
 }

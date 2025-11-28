@@ -26,5 +26,7 @@
   ! F &A = λk. F₀(F₁(k));
   ! F &A = λk. F₀(F₁(k));
   ! F &A = λk. F₀(F₁(k));
+  ! F &A = λk. F₀(F₁(k));
+  ! F &A = λk. F₀(F₁(k));
   λk. F₀(F₁(k))
 @main = @P24(@cnot,@ctru)
