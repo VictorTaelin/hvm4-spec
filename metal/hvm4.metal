@@ -444,207 +444,97 @@ inline Term alo_node(device Term* heap, thread State& st, uint32_t ls_loc, uint3
 
 // WNF
 // ===
-//
-// Uses a state machine with explicit phase variable for efficient control flow.
-// Phase 0 = ENTER, Phase 1 = APPLY
 
 Term wnf(device Term* heap, device Term* stack, device uint32_t* book, thread State& st, Term term) {
   uint32_t s_pos = 0;
   Term next = term;
   Term whnf = 0;
-  uint8_t phase = 0;  // 0 = ENTER, 1 = APPLY
+  uint8_t phase = 0;
 
   while (true) {
     if (phase == 0) {
-      // ENTER phase
-      uint8_t t = tag(next);
-
-      if (t == VAR) {
-        uint32_t loc = val(next);
-        if (sub_of(heap[loc])) {
-          next = clear_sub(heap[loc]);
-          continue;
+      switch (tag(next)) {
+        case VAR: {
+          uint32_t loc = val(next);
+          Term h = heap[loc];
+          if (sub_of(h)) { next = clear_sub(h); continue; }
+          whnf = next; phase = 1; continue;
         }
-        whnf = next;
-        phase = 1;
-        continue;
+        case CO0: case CO1: {
+          uint32_t loc = val(next);
+          Term h = heap[loc];
+          if (sub_of(h)) { next = clear_sub(h); continue; }
+          stack[s_pos++] = next; next = h; continue;
+        }
+        case APP: { stack[s_pos++] = next; next = heap[val(next)]; continue; }
+        case DUP: { next = heap[val(next) + 1]; continue; }
+        case REF: {
+          uint32_t book_loc = book[ext(next)];
+          if (book_loc != 0) { next = make_alo(heap, st, 0, book_loc); continue; }
+          whnf = next; phase = 1; continue;
+        }
+        case ALO: {
+          uint64_t pair = heap[val(next)];
+          uint32_t tm_loc = uint32_t(pair & VAL_MASK);
+          uint32_t ls_loc = uint32_t(pair >> 32);
+          Term bk = heap[tm_loc];
+          uint8_t bt = tag(bk); uint32_t bv = val(bk); uint32_t be = ext(bk);
+          switch (bt) {
+            case VAR: next = alo_var(heap, ls_loc, bv); continue;
+            case CO0: next = alo_cop(heap, ls_loc, bv, be, 0); continue;
+            case CO1: next = alo_cop(heap, ls_loc, bv, be, 1); continue;
+            case LAM: next = alo_lam(heap, st, ls_loc, bv); continue;
+            case APP: next = alo_node(heap, st, ls_loc, bv, APP, be, 2); continue;
+            case SUP: next = alo_node(heap, st, ls_loc, bv, SUP, be, 2); continue;
+            case MAT: next = alo_node(heap, st, ls_loc, bv, MAT, be, 2); continue;
+            case DRY: next = alo_node(heap, st, ls_loc, bv, DRY, be, 2); continue;
+            case DUP: next = alo_dup(heap, st, ls_loc, bv, be); continue;
+            case REF: case NAM: case ERA: next = bk; continue;
+            default:
+              if (bt >= CTR && bt <= CTR + CTR_MAX_ARI) { next = alo_node(heap, st, ls_loc, bv, bt, be, bt - CTR); continue; }
+              whnf = next; phase = 1; continue;
+          }
+        }
+        default: whnf = next; phase = 1; continue;
       }
-
-      if (t == CO0 || t == CO1) {
-        uint32_t loc = val(next);
-        if (sub_of(heap[loc])) {
-          next = clear_sub(heap[loc]);
-          continue;
-        }
-        stack[s_pos++] = next;
-        next = heap[loc];
-        continue;
-      }
-
-      if (t == APP) {
-        uint32_t loc = val(next);
-        stack[s_pos++] = next;
-        next = heap[loc];
-        continue;
-      }
-
-      if (t == DUP) {
-        next = heap[val(next) + 1];
-        continue;
-      }
-
-      if (t == REF) {
-        uint32_t nam = ext(next);
-        if (book[nam] != 0) {
-          next = make_alo(heap, st, 0, book[nam]);
-          continue;
-        }
-        whnf = next;
-        phase = 1;
-        continue;
-      }
-
-      if (t == ALO) {
-        uint32_t alo_loc = val(next);
-        uint64_t pair    = heap[alo_loc];
-        uint32_t tm_loc  = uint32_t(pair & VAL_MASK);
-        uint32_t ls_loc  = uint32_t(pair >> 32);
-        Term     bk      = heap[tm_loc];
-        uint8_t  bk_tag  = tag(bk);
-
-        if (bk_tag == VAR) {
-          next = alo_var(heap, ls_loc, val(bk));
-          continue;
-        }
-        if (bk_tag == CO0 || bk_tag == CO1) {
-          next = alo_cop(heap, ls_loc, val(bk), ext(bk), bk_tag == CO0 ? 0 : 1);
-          continue;
-        }
-        if (bk_tag == LAM) {
-          next = alo_lam(heap, st, ls_loc, val(bk));
-          continue;
-        }
-        if (bk_tag == APP || bk_tag == SUP || bk_tag == MAT || bk_tag == DRY) {
-          next = alo_node(heap, st, ls_loc, val(bk), bk_tag, ext(bk), arity_of(bk));
-          continue;
-        }
-        if (bk_tag == DUP) {
-          next = alo_dup(heap, st, ls_loc, val(bk), ext(bk));
-          continue;
-        }
-        if (bk_tag == REF || bk_tag == NAM || bk_tag == ERA) {
-          next = bk;
-          continue;
-        }
-        if (bk_tag >= CTR && bk_tag <= CTR + CTR_MAX_ARI) {
-          next = alo_node(heap, st, ls_loc, val(bk), bk_tag, ext(bk), arity_of(bk));
-          continue;
-        }
-        whnf = next;
-        phase = 1;
-        continue;
-      }
-
-      // NAM, DRY, ERA, SUP, LAM, MAT, CTR -> WHNF
-      whnf = next;
-      phase = 1;
-      continue;
     }
-
-    // APPLY phase
-    if (s_pos == 0) {
-      return whnf;
-    }
-
+    if (s_pos == 0) return whnf;
     Term frame = stack[--s_pos];
-    uint8_t ft = tag(frame);
-    uint8_t wt = tag(whnf);
-
+    uint8_t ft = tag(frame); uint8_t wt = tag(whnf);
     if (ft == APP) {
-      uint32_t loc = val(frame);
-      Term arg = heap[loc + 1];
-
-      if (wt == ERA) {
-        whnf = app_era(st);
-        continue;
+      Term arg = heap[val(frame) + 1];
+      switch (wt) {
+        case ERA: whnf = app_era(st); continue;
+        case NAM: case DRY: whnf = app_stuck(heap, st, whnf, arg); continue;
+        case LAM: next = app_lam(heap, st, whnf, arg); phase = 0; continue;
+        case SUP: next = app_sup(heap, st, frame, whnf); phase = 0; continue;
+        case MAT: stack[s_pos++] = whnf; next = arg; phase = 0; continue;
+        default: whnf = App(heap, st, whnf, arg); continue;
       }
-      if (wt == NAM || wt == DRY) {
-        whnf = app_stuck(heap, st, whnf, arg);
-        continue;
+    } else if (ft == MAT) {
+      switch (wt) {
+        case ERA: whnf = app_era(st); continue;
+        case SUP: next = app_mat_sup(heap, st, frame, whnf); phase = 0; continue;
+        default:
+          if (wt >= CTR && wt <= CTR + CTR_MAX_ARI) { next = app_mat_ctr(heap, st, frame, whnf); phase = 0; continue; }
+          whnf = App(heap, st, frame, whnf); continue;
       }
-      if (wt == LAM) {
-        next = app_lam(heap, st, whnf, arg);
-        phase = 0;
-        continue;
+    } else if (ft == CO0 || ft == CO1) {
+      uint8_t side = (ft == CO0) ? 0 : 1;
+      uint32_t loc = val(frame); uint32_t lab = ext(frame);
+      switch (wt) {
+        case LAM: next = dup_lam(heap, st, lab, loc, side, whnf); phase = 0; continue;
+        case SUP: next = dup_sup(heap, st, lab, loc, side, whnf); phase = 0; continue;
+        case ERA: case NAM: whnf = dup_node(heap, st, lab, loc, side, whnf); continue;
+        case MAT: case DRY: next = dup_node(heap, st, lab, loc, side, whnf); phase = 0; continue;
+        default:
+          if (wt >= CTR && wt <= CTR + CTR_MAX_ARI) { next = dup_node(heap, st, lab, loc, side, whnf); phase = 0; continue; }
+          uint32_t new_loc = heap_alloc(st, 1);
+          heap[new_loc] = whnf;
+          subst_var(heap, loc, new_term(0, side == 0 ? CO1 : CO0, lab, new_loc));
+          whnf = new_term(0, side == 0 ? CO0 : CO1, lab, new_loc);
+          continue;
       }
-      if (wt == SUP) {
-        next = app_sup(heap, st, frame, whnf);
-        phase = 0;
-        continue;
-      }
-      if (wt == MAT) {
-        stack[s_pos++] = whnf;
-        next = arg;
-        phase = 0;
-        continue;
-      }
-      whnf = App(heap, st, whnf, arg);
-      continue;
-    }
-
-    if (ft == MAT) {
-      if (wt == ERA) {
-        whnf = app_era(st);
-        continue;
-      }
-      if (wt == SUP) {
-        next = app_mat_sup(heap, st, frame, whnf);
-        phase = 0;
-        continue;
-      }
-      if (wt >= CTR && wt <= CTR + CTR_MAX_ARI) {
-        next = app_mat_ctr(heap, st, frame, whnf);
-        phase = 0;
-        continue;
-      }
-      whnf = App(heap, st, frame, whnf);
-      continue;
-    }
-
-    if (ft == CO0 || ft == CO1) {
-      uint8_t  side = (ft == CO0) ? 0 : 1;
-      uint32_t loc  = val(frame);
-      uint32_t lab  = ext(frame);
-
-      if (wt == LAM) {
-        next = dup_lam(heap, st, lab, loc, side, whnf);
-        phase = 0;
-        continue;
-      }
-      if (wt == SUP) {
-        next = dup_sup(heap, st, lab, loc, side, whnf);
-        phase = 0;
-        continue;
-      }
-      if (wt == ERA || wt == NAM) {
-        whnf = dup_node(heap, st, lab, loc, side, whnf);
-        continue;
-      }
-      if (wt == MAT || wt == DRY) {
-        next = dup_node(heap, st, lab, loc, side, whnf);
-        phase = 0;
-        continue;
-      }
-      if (wt >= CTR && wt <= CTR + CTR_MAX_ARI) {
-        next = dup_node(heap, st, lab, loc, side, whnf);
-        phase = 0;
-        continue;
-      }
-      uint32_t new_loc = heap_alloc(st, 1);
-      heap[new_loc] = whnf;
-      subst_var(heap, loc, new_term(0, side == 0 ? CO1 : CO0, lab, new_loc));
-      whnf = new_term(0, side == 0 ? CO0 : CO1, lab, new_loc);
-      continue;
     }
   }
 }
@@ -652,47 +542,55 @@ Term wnf(device Term* heap, device Term* stack, device uint32_t* book, thread St
 // SNF
 // ===
 
-struct SNFEntry {
-  uint32_t loc;
+struct SNFFrame {
+  Term     term;
+  uint32_t write_loc;
   uint32_t depth;
+  uint8_t  phase;
 };
 
+constant uint32_t SNF_ROOT = 0xFFFFFFFF;
+
 Term snf(device Term* heap, device Term* stack, device uint32_t* book, thread State& st, Term term) {
-  // Use second half of stack for SNF
-  device SNFEntry* snf_stack = (device SNFEntry*)(stack + 1024*1024);
+  device SNFFrame* snf_stack = (device SNFFrame*)(stack + 1024*1024);
   uint32_t snf_pos = 0;
 
-  Term result = wnf(heap, stack, book, st, term);
-  uint32_t ari = arity_of(result);
+  snf_stack[snf_pos++] = SNFFrame{term, SNF_ROOT, 0, 0};
 
-  if (ari > 0) {
-    uint32_t loc = val(result);
-    if (tag(result) == LAM) {
-      subst_var(heap, loc, Nam(1));
-      snf_stack[snf_pos++] = SNFEntry{loc, 1};
-    } else {
-      for (uint32_t i = 0; i < ari; i++) {
-        snf_stack[snf_pos++] = SNFEntry{loc + i, 0};
-      }
-    }
-  }
+  Term result = 0;
 
   while (snf_pos > 0) {
-    SNFEntry entry = snf_stack[--snf_pos];
+    SNFFrame frame = snf_stack[--snf_pos];
 
-    Term t = wnf(heap, stack, book, st, heap[entry.loc]);
-    heap[entry.loc] = t;
+    if (frame.phase == 0) {
+      Term t = wnf(heap, stack, book, st, frame.term);
+      uint32_t ari = arity_of(t);
 
-    ari = arity_of(t);
-    if (ari > 0) {
-      uint32_t loc = val(t);
-      if (tag(t) == LAM) {
-        subst_var(heap, loc, Nam(entry.depth + 1));
-        snf_stack[snf_pos++] = SNFEntry{loc, entry.depth + 1};
-      } else {
-        for (uint32_t i = 0; i < ari; i++) {
-          snf_stack[snf_pos++] = SNFEntry{loc + i, entry.depth};
+      if (ari == 0) {
+        if (frame.write_loc != SNF_ROOT) {
+          heap[frame.write_loc] = t;
+        } else {
+          result = t;
         }
+      } else {
+        uint32_t loc = val(t);
+        snf_stack[snf_pos++] = SNFFrame{t, frame.write_loc, frame.depth, 1};
+
+        if (tag(t) == LAM) {
+          Term body = heap[loc];
+          subst_var(heap, loc, Nam(frame.depth + 1));
+          snf_stack[snf_pos++] = SNFFrame{body, loc, frame.depth + 1, 0};
+        } else {
+          for (int32_t i = int32_t(ari) - 1; i >= 0; i--) {
+            snf_stack[snf_pos++] = SNFFrame{heap[loc + uint32_t(i)], loc + uint32_t(i), frame.depth, 0};
+          }
+        }
+      }
+    } else {
+      if (frame.write_loc != SNF_ROOT) {
+        heap[frame.write_loc] = frame.term;
+      } else {
+        result = frame.term;
       }
     }
   }
