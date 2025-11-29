@@ -45,9 +45,13 @@ let VAL_MASK: UInt64 = 0xFFFFFFFF
 // Capacities
 // ==========
 
-let BOOK_CAP: Int  = 1 << 24   // 16M book entries
-let HEAP_CAP: Int  = 1 << 26   // 64M heap terms (512MB)
-let STACK_CAP: Int = 1 << 21   // 2M stack entries (16MB)
+let BOOK_CAP: Int  = 1 << 24   // 16M book entries (name -> loc)
+let HEAP_CAP: Int  = 1 << 26   // 64M heap terms (512MB) for single-thread
+let STACK_CAP: Int = 1 << 21   // 2M stack entries (16MB) for single-thread
+
+// Multi-threaded capacities
+let MT_HEAP_PER_THR: UInt64  = 1 << 21   // 2M terms per thread (16MB) - benchmark uses ~1M
+let MT_STACK_PER_THR: UInt64 = 1 << 19   // 512K entries per thread (4MB)
 
 // Globals for parsing
 // ===================
@@ -512,6 +516,27 @@ func main() {
     exit(1)
   }
 
+  // Parse command line arguments
+  var numThreads: Int = 1
+  var srcPath: String? = nil
+
+  var i = 1
+  while i < CommandLine.arguments.count {
+    let arg = CommandLine.arguments[i]
+    if arg.hasPrefix("-t") {
+      if let n = Int(arg.dropFirst(2)), n > 0 {
+        numThreads = n
+      }
+    } else if arg == "--bench" {
+      // Run benchmark with 1, 2, 4, 8, ..., 1024 threads
+      runBenchmarkSuite(device)
+      return
+    } else {
+      srcPath = arg
+    }
+    i += 1
+  }
+
   // Allocate host memory for parsing
   HEAP = UnsafeMutablePointer<Term>.allocate(capacity: HEAP_CAP)
   HEAP.initialize(repeating: 0, count: HEAP_CAP)
@@ -545,8 +570,7 @@ func main() {
     """
 
   var src = testSrc
-  if CommandLine.arguments.count > 1 {
-    let path = CommandLine.arguments[1]
+  if let path = srcPath {
     if let contents = try? String(contentsOfFile: path, encoding: .utf8) {
       src = contents
     } else {
@@ -557,7 +581,7 @@ func main() {
 
   // Parse
   var s = PState(
-    file: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "<inline>",
+    file: srcPath ?? "<inline>",
     src: src,
     pos: 0,
     line: 1,
@@ -579,23 +603,30 @@ func main() {
   }
 
   // Load Metal shader
+  guard let shaderSource = loadShaderSource() else {
+    fputs("Error: Could not load hvm4.metal shader\n", stderr)
+    exit(1)
+  }
+
+  if numThreads == 1 {
+    runSingleThreaded(device, shaderSource, bookSize, mainName)
+  } else {
+    runMultiThreaded(device, shaderSource, bookSize, mainName, numThreads)
+  }
+}
+
+func loadShaderSource() -> String? {
   let metalPath = URL(fileURLWithPath: CommandLine.arguments[0])
     .deletingLastPathComponent()
     .appendingPathComponent("hvm4.metal")
 
-  guard let shaderSource = try? String(contentsOf: metalPath, encoding: .utf8) else {
-    // Try current directory
-    guard let shaderSource = try? String(contentsOfFile: "hvm4.metal", encoding: .utf8) else {
-      fputs("Error: Could not load hvm4.metal shader\n", stderr)
-      exit(1)
-    }
-    runWithShader(device, shaderSource, bookSize, mainName)
-    return
+  if let source = try? String(contentsOf: metalPath, encoding: .utf8) {
+    return source
   }
-  runWithShader(device, shaderSource, bookSize, mainName)
+  return try? String(contentsOfFile: "hvm4.metal", encoding: .utf8)
 }
 
-func runWithShader(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ mainName: UInt32) {
+func runSingleThreaded(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ mainName: UInt32) {
   // Compile shader
   let library: MTLLibrary
   do {
@@ -733,11 +764,418 @@ func runWithShader(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt
   // Get heap for stringification
   let heapPtr = heapBuffer.contents().bindMemory(to: Term.self, capacity: HEAP_CAP)
 
+  print("Threads: 1")
   print("Result: \(strTerm(heapPtr, resultTerm))")
   print("Interactions: \(totalItrs)")
   print("Time: \(String(format: "%.6f", wallTime))s")
   print("Performance: \(String(format: "%.2f", mips)) MIPS")
   print("Heap used: \(finalAlloc) terms")
+}
+
+func runMultiThreaded(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ mainName: UInt32, _ numThreads: Int) {
+  // Compile shader
+  let library: MTLLibrary
+  do {
+    library = try device.makeLibrary(source: shaderSource, options: nil)
+  } catch {
+    fputs("Error compiling shader: \(error)\n", stderr)
+    exit(1)
+  }
+
+  guard let function = library.makeFunction(name: "hvm_run_mt") else {
+    fputs("Error: Could not find hvm_run_mt kernel\n", stderr)
+    exit(1)
+  }
+
+  let pipeline: MTLComputePipelineState
+  do {
+    pipeline = try device.makeComputePipelineState(function: function)
+  } catch {
+    fputs("Error creating pipeline: \(error)\n", stderr)
+    exit(1)
+  }
+
+  guard let queue = device.makeCommandQueue() else {
+    fputs("Error: Could not create command queue\n", stderr)
+    exit(1)
+  }
+
+  // Memory layout (CUDA-style warp-coalesced):
+  //   heap: [book region | warp0 slice | warp1 slice | ...]
+  //   Each warp slice = heap_per_thr * simd_width terms, with interleaved access
+  let simdWidth = pipeline.threadExecutionWidth
+  let heapPerThr = MT_HEAP_PER_THR
+  let stackPerThr = MT_STACK_PER_THR
+
+  let numWarps = (numThreads + simdWidth - 1) / simdWidth
+  let warpSliceSize = Int(heapPerThr) * simdWidth
+  let totalHeapSize = Int(bookSize) + numWarps * warpSliceSize
+  let totalStackSize = numThreads * Int(stackPerThr)
+
+  // Create buffers
+  // Heap: copy book data at start
+  let heapBuffer = device.makeBuffer(length: totalHeapSize * MemoryLayout<Term>.stride, options: .storageModeShared)!
+  memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+
+  let stackBuffer = device.makeBuffer(length: totalStackSize * MemoryLayout<Term>.stride, options: .storageModeShared)!
+
+  let bookBuffer = device.makeBuffer(bytes: BOOK, length: BOOK_CAP * MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+  // Per-thread output buffers
+  let itrsBuffer = device.makeBuffer(length: numThreads * MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+  let outputsBuffer = device.makeBuffer(length: numThreads * MemoryLayout<Term>.stride, options: .storageModeShared)!
+
+  // Constant buffers
+  var bookSizeVal = bookSize
+  let bookSizeBuffer = device.makeBuffer(bytes: &bookSizeVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+  var mainRef = mainName
+  let mainRefBuffer = device.makeBuffer(bytes: &mainRef, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+  var numThreadsVal = UInt32(numThreads)
+  let numThreadsBuffer = device.makeBuffer(bytes: &numThreadsVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+  var heapPerThrVal = heapPerThr
+  let heapPerThrBuffer = device.makeBuffer(bytes: &heapPerThrVal, length: MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+
+  var stackPerThrVal = stackPerThr
+  let stackPerThrBuffer = device.makeBuffer(bytes: &stackPerThrVal, length: MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+
+  var simdWidthVal = UInt32(simdWidth)
+  let simdWidthBuffer = device.makeBuffer(bytes: &simdWidthVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+  // Warm up
+  for _ in 0..<3 {
+    memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+
+    guard let cmdBuffer = queue.makeCommandBuffer(),
+          let encoder = cmdBuffer.makeComputeCommandEncoder() else {
+      fputs("Error: Could not create command encoder\n", stderr)
+      exit(1)
+    }
+
+    encoder.setComputePipelineState(pipeline)
+    encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+    encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+    encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+    encoder.setBuffer(itrsBuffer, offset: 0, index: 3)
+    encoder.setBuffer(outputsBuffer, offset: 0, index: 4)
+    encoder.setBuffer(bookSizeBuffer, offset: 0, index: 5)
+    encoder.setBuffer(mainRefBuffer, offset: 0, index: 6)
+    encoder.setBuffer(numThreadsBuffer, offset: 0, index: 7)
+    encoder.setBuffer(heapPerThrBuffer, offset: 0, index: 8)
+    encoder.setBuffer(stackPerThrBuffer, offset: 0, index: 9)
+    encoder.setBuffer(simdWidthBuffer, offset: 0, index: 10)
+
+    // Use single threadgroup for now
+    let threadsPerGroup = min(numThreads, pipeline.maxTotalThreadsPerThreadgroup)
+    encoder.dispatchThreads(MTLSize(width: numThreads, height: 1, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1))
+    encoder.endEncoding()
+    cmdBuffer.commit()
+    cmdBuffer.waitUntilCompleted()
+  }
+
+  // Benchmark run
+  memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+
+  guard let cmdBuffer = queue.makeCommandBuffer(),
+        let encoder = cmdBuffer.makeComputeCommandEncoder() else {
+    fputs("Error: Could not create command encoder\n", stderr)
+    exit(1)
+  }
+
+  encoder.setComputePipelineState(pipeline)
+  encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+  encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+  encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+  encoder.setBuffer(itrsBuffer, offset: 0, index: 3)
+  encoder.setBuffer(outputsBuffer, offset: 0, index: 4)
+  encoder.setBuffer(bookSizeBuffer, offset: 0, index: 5)
+  encoder.setBuffer(mainRefBuffer, offset: 0, index: 6)
+  encoder.setBuffer(numThreadsBuffer, offset: 0, index: 7)
+  encoder.setBuffer(heapPerThrBuffer, offset: 0, index: 8)
+  encoder.setBuffer(stackPerThrBuffer, offset: 0, index: 9)
+  encoder.setBuffer(simdWidthBuffer, offset: 0, index: 10)
+
+  let threadsPerGroup = min(numThreads, pipeline.maxTotalThreadsPerThreadgroup)
+  encoder.dispatchThreads(MTLSize(width: numThreads, height: 1, depth: 1),
+                          threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1))
+  encoder.endEncoding()
+
+  let start = DispatchTime.now()
+  cmdBuffer.commit()
+  cmdBuffer.waitUntilCompleted()
+  let end = DispatchTime.now()
+
+  let wallTime = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000.0
+
+  // Sum iterations from all threads
+  let itrsPtr = itrsBuffer.contents().bindMemory(to: UInt64.self, capacity: numThreads)
+  var totalItrs: UInt64 = 0
+  for i in 0..<numThreads {
+    totalItrs += itrsPtr[i]
+  }
+
+  let mips = Double(totalItrs) / wallTime / 1_000_000.0
+
+  // Get thread 0's result for display
+  let outputsPtr = outputsBuffer.contents().bindMemory(to: Term.self, capacity: numThreads)
+  let resultTerm = outputsPtr[0]
+
+  print("Threads: \(numThreads)")
+  print("Result (thread 0): tag=\(tag(resultTerm)) val=\(val(resultTerm))")
+  print("Total interactions: \(totalItrs)")
+  print("Time: \(String(format: "%.6f", wallTime))s")
+  print("Performance: \(String(format: "%.2f", mips)) MIPS")
+  print("Heap per thread: \(heapPerThr) terms (\(heapPerThr * 8 / 1024 / 1024) MB)")
+  print("Stack per thread: \(stackPerThr) entries (\(stackPerThr * 8 / 1024 / 1024) MB)")
+}
+
+func runBenchmarkSuite(_ device: MTLDevice) {
+  // Allocate host memory for parsing
+  HEAP = UnsafeMutablePointer<Term>.allocate(capacity: HEAP_CAP)
+  HEAP.initialize(repeating: 0, count: HEAP_CAP)
+  BOOK = UnsafeMutablePointer<UInt32>.allocate(capacity: BOOK_CAP)
+  BOOK.initialize(repeating: 0, count: BOOK_CAP)
+
+  // Default benchmark
+  let testSrc = """
+    @ctru = λt.λf.t
+    @cfal = λt.λf.f
+    @cnot = λx.x(@cfal,@ctru)
+    @P24  = λf.
+      ! F &A = f;
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      ! F &A = λk. F₀(F₁(k));
+      λk. F₀(F₁(k))
+    @main = @P24(@cnot,@ctru)
+    """
+
+  var s = PState(file: "<inline>", src: testSrc, pos: 0, line: 1, col: 1)
+  parseDef(&s)
+
+  let bookSize = UInt32(ALLOC)
+
+  var mainName: UInt32 = 0
+  for c in "main" {
+    mainName = ((mainName << 6) + UInt32(charToB64(c))) & UInt32(EXT_MASK)
+  }
+
+  guard BOOK[Int(mainName)] != 0 else {
+    fputs("Error: @main not found\n", stderr)
+    exit(1)
+  }
+
+  guard let shaderSource = loadShaderSource() else {
+    fputs("Error: Could not load hvm4.metal shader\n", stderr)
+    exit(1)
+  }
+
+  print("=== HVM4 Metal Benchmark Suite ===")
+  print("Device: \(device.name)")
+  print("")
+  print("Threads\tTime(s)\t\tIterations\tMIPS")
+  print("-------\t-------\t\t----------\t----")
+
+  // Test with 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024 threads
+  let threadCounts = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+
+  for numThreads in threadCounts {
+    let result = runBenchmarkOnce(device, shaderSource, bookSize, mainName, numThreads)
+    print("\(numThreads)\t\(String(format: "%.6f", result.time))\t\(result.itrs)\t\t\(String(format: "%.2f", result.mips))")
+  }
+}
+
+struct BenchmarkResult {
+  let time: Double
+  let itrs: UInt64
+  let mips: Double
+}
+
+func runBenchmarkOnce(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ mainName: UInt32, _ numThreads: Int) -> BenchmarkResult {
+  let library: MTLLibrary
+  do {
+    library = try device.makeLibrary(source: shaderSource, options: nil)
+  } catch {
+    fputs("Error compiling shader: \(error)\n", stderr)
+    exit(1)
+  }
+
+  let kernelName = numThreads == 1 ? "hvm_run" : "hvm_run_mt"
+  guard let function = library.makeFunction(name: kernelName) else {
+    fputs("Error: Could not find \(kernelName) kernel\n", stderr)
+    exit(1)
+  }
+
+  let pipeline: MTLComputePipelineState
+  do {
+    pipeline = try device.makeComputePipelineState(function: function)
+  } catch {
+    fputs("Error creating pipeline: \(error)\n", stderr)
+    exit(1)
+  }
+
+  guard let queue = device.makeCommandQueue() else {
+    fputs("Error: Could not create command queue\n", stderr)
+    exit(1)
+  }
+
+  if numThreads == 1 {
+    // Single-threaded
+    let heapBuffer = device.makeBuffer(bytes: HEAP, length: HEAP_CAP * MemoryLayout<Term>.stride, options: .storageModeShared)!
+    let stackBuffer = device.makeBuffer(length: STACK_CAP * MemoryLayout<Term>.stride, options: .storageModeShared)!
+    let bookBuffer = device.makeBuffer(bytes: BOOK, length: BOOK_CAP * MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    let resultBuffer = device.makeBuffer(length: 5 * MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+    var initAlloc = bookSize
+    let initAllocBuffer = device.makeBuffer(bytes: &initAlloc, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    var mainRef = mainName
+    let mainRefBuffer = device.makeBuffer(bytes: &mainRef, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+    // Warm up
+    for _ in 0..<3 {
+      memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+      guard let cmdBuffer = queue.makeCommandBuffer(), let encoder = cmdBuffer.makeComputeCommandEncoder() else { exit(1) }
+      encoder.setComputePipelineState(pipeline)
+      encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+      encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+      encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+      encoder.setBuffer(resultBuffer, offset: 0, index: 3)
+      encoder.setBuffer(initAllocBuffer, offset: 0, index: 4)
+      encoder.setBuffer(mainRefBuffer, offset: 0, index: 5)
+      encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+      encoder.endEncoding()
+      cmdBuffer.commit()
+      cmdBuffer.waitUntilCompleted()
+    }
+
+    // Benchmark
+    memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+    guard let cmdBuffer = queue.makeCommandBuffer(), let encoder = cmdBuffer.makeComputeCommandEncoder() else { exit(1) }
+    encoder.setComputePipelineState(pipeline)
+    encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+    encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+    encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+    encoder.setBuffer(resultBuffer, offset: 0, index: 3)
+    encoder.setBuffer(initAllocBuffer, offset: 0, index: 4)
+    encoder.setBuffer(mainRefBuffer, offset: 0, index: 5)
+    encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+    encoder.endEncoding()
+
+    let start = DispatchTime.now()
+    cmdBuffer.commit()
+    cmdBuffer.waitUntilCompleted()
+    let end = DispatchTime.now()
+
+    let wallTime = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000.0
+    let resultPtr = resultBuffer.contents().bindMemory(to: UInt32.self, capacity: 5)
+    let totalItrs = (UInt64(resultPtr[2]) << 32) | UInt64(resultPtr[1])
+    let mips = Double(totalItrs) / wallTime / 1_000_000.0
+
+    return BenchmarkResult(time: wallTime, itrs: totalItrs, mips: mips)
+  } else {
+    // Multi-threaded with CUDA-style warp-coalesced memory layout
+    // Memory layout: [book | warp0 slice | warp1 slice | ...]
+    // Each warp slice = heap_per_thr * simd_width terms, with interleaved access
+    let simdWidth = pipeline.threadExecutionWidth
+    let heapPerThr = MT_HEAP_PER_THR
+    let stackPerThr = MT_STACK_PER_THR
+    let numWarps = (numThreads + simdWidth - 1) / simdWidth
+    let warpSliceSize = Int(heapPerThr) * simdWidth
+    let totalHeapSize = Int(bookSize) + numWarps * warpSliceSize
+    let totalStackSize = numThreads * Int(stackPerThr)
+
+    let heapBuffer = device.makeBuffer(length: totalHeapSize * MemoryLayout<Term>.stride, options: .storageModeShared)!
+    memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+    let stackBuffer = device.makeBuffer(length: totalStackSize * MemoryLayout<Term>.stride, options: .storageModeShared)!
+    let bookBuffer = device.makeBuffer(bytes: BOOK, length: BOOK_CAP * MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    let itrsBuffer = device.makeBuffer(length: numThreads * MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+    let outputsBuffer = device.makeBuffer(length: numThreads * MemoryLayout<Term>.stride, options: .storageModeShared)!
+
+    var bookSizeVal = bookSize
+    let bookSizeBuffer = device.makeBuffer(bytes: &bookSizeVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    var mainRef = mainName
+    let mainRefBuffer = device.makeBuffer(bytes: &mainRef, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    var numThreadsVal = UInt32(numThreads)
+    let numThreadsBuffer = device.makeBuffer(bytes: &numThreadsVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+    var heapPerThrVal = heapPerThr
+    let heapPerThrBuffer = device.makeBuffer(bytes: &heapPerThrVal, length: MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+    var stackPerThrVal = stackPerThr
+    let stackPerThrBuffer = device.makeBuffer(bytes: &stackPerThrVal, length: MemoryLayout<UInt64>.stride, options: .storageModeShared)!
+    var simdWidthVal = UInt32(simdWidth)
+    let simdWidthBuffer = device.makeBuffer(bytes: &simdWidthVal, length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+
+    let threadsPerGroup = min(numThreads, pipeline.maxTotalThreadsPerThreadgroup)
+
+    // Warm up
+    for _ in 0..<3 {
+      memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+      guard let cmdBuffer = queue.makeCommandBuffer(), let encoder = cmdBuffer.makeComputeCommandEncoder() else { exit(1) }
+      encoder.setComputePipelineState(pipeline)
+      encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+      encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+      encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+      encoder.setBuffer(itrsBuffer, offset: 0, index: 3)
+      encoder.setBuffer(outputsBuffer, offset: 0, index: 4)
+      encoder.setBuffer(bookSizeBuffer, offset: 0, index: 5)
+      encoder.setBuffer(mainRefBuffer, offset: 0, index: 6)
+      encoder.setBuffer(numThreadsBuffer, offset: 0, index: 7)
+      encoder.setBuffer(heapPerThrBuffer, offset: 0, index: 8)
+      encoder.setBuffer(stackPerThrBuffer, offset: 0, index: 9)
+      encoder.setBuffer(simdWidthBuffer, offset: 0, index: 10)
+      encoder.dispatchThreads(MTLSize(width: numThreads, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1))
+      encoder.endEncoding()
+      cmdBuffer.commit()
+      cmdBuffer.waitUntilCompleted()
+    }
+
+    // Benchmark
+    memcpy(heapBuffer.contents(), HEAP, Int(bookSize) * MemoryLayout<Term>.stride)
+    guard let cmdBuffer = queue.makeCommandBuffer(), let encoder = cmdBuffer.makeComputeCommandEncoder() else { exit(1) }
+    encoder.setComputePipelineState(pipeline)
+    encoder.setBuffer(heapBuffer, offset: 0, index: 0)
+    encoder.setBuffer(stackBuffer, offset: 0, index: 1)
+    encoder.setBuffer(bookBuffer, offset: 0, index: 2)
+    encoder.setBuffer(itrsBuffer, offset: 0, index: 3)
+    encoder.setBuffer(outputsBuffer, offset: 0, index: 4)
+    encoder.setBuffer(bookSizeBuffer, offset: 0, index: 5)
+    encoder.setBuffer(mainRefBuffer, offset: 0, index: 6)
+    encoder.setBuffer(numThreadsBuffer, offset: 0, index: 7)
+    encoder.setBuffer(heapPerThrBuffer, offset: 0, index: 8)
+    encoder.setBuffer(stackPerThrBuffer, offset: 0, index: 9)
+    encoder.setBuffer(simdWidthBuffer, offset: 0, index: 10)
+    encoder.dispatchThreads(MTLSize(width: numThreads, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1))
+    encoder.endEncoding()
+
+    let start = DispatchTime.now()
+    cmdBuffer.commit()
+    cmdBuffer.waitUntilCompleted()
+    let end = DispatchTime.now()
+
+    let wallTime = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000.0
+    let itrsPtr = itrsBuffer.contents().bindMemory(to: UInt64.self, capacity: numThreads)
+    var totalItrs: UInt64 = 0
+    for i in 0..<numThreads {
+      totalItrs += itrsPtr[i]
+    }
+    let mips = Double(totalItrs) / wallTime / 1_000_000.0
+
+    return BenchmarkResult(time: wallTime, itrs: totalItrs, mips: mips)
+  }
 }
 
 main()
