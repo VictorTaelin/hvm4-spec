@@ -368,9 +368,9 @@ func runGPU(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ m
   let packed = outputsPtr[0]  // Just read thread 0's stats
   let wnfLoops = packed & 0xFFFFFFFF
   let snfLoops = (packed >> 32) & 0xFFFFFFFF
-  if numThreads == 1 {
-    print("  [Thread 0 stats] wnf_loop_iterations=\(wnfLoops), snf_loop_iterations=\(snfLoops)")
-  }
+/*  if numThreads == 1 {*/
+/*    print("  [Thread 0 stats] wnf_loop_iterations=\(wnfLoops), snf_loop_iterations=\(snfLoops)")*/
+/*  }*/
 
   return BenchResult(time: wallTime, itrs: totalItrs, mips: mips)
 }
@@ -438,11 +438,11 @@ func main() {
     print("=== HVM4 Metal Benchmark ===")
     print("Device: \(device.name)")
     print("")
-    print("Threads\tTime(s)\t\tIterations\tMIPS")
-    print("-------\t-------\t\t----------\t----")
-    for n in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] {
+    print("Threads | Time(s) | Inters     | MIPS")
+    print("------- | ------- | ---------- | ----")
+    for n in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] {
       let r = runGPU(device, shaderSource, bookSize, mainName, n)
-      print("\(n)\t\(String(format: "%.6f", r.time))\t\(r.itrs)\t\t\(String(format: "%.2f", r.mips))")
+      print("\(n) | \(String(format: "%.6f", r.time)) | \(r.itrs) | \(String(format: "%.2f", r.mips))")
     }
 /*  } else {*/
 /*    let r = runGPU(device, shaderSource, bookSize, mainName, numThreads)*/
