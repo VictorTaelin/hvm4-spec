@@ -337,13 +337,16 @@ inline Term alo_node(const thread Heap& heap, thread State& st, uint32_t ls_loc,
 }
 
 // WNF (Weak Normal Form)
-Term wnf(const thread Heap& heap, device Term* wnf_stack, device uint32_t* book, thread State& st, Term term, thread uint32_t& max_wnf) {
+constant uint32_t WNF_LOOP_LIMIT = 500000;
+
+Term wnf(const thread Heap& heap, device Term* wnf_stack, device uint32_t* book, thread State& st, Term term, thread uint32_t& max_wnf, thread uint32_t& wnf_loops) {
   uint32_t s_pos = 0;
   Term next = term;
   bool reducing = true;
   uint32_t sw = st.simd_width;
 
-  while (true) {
+  while (wnf_loops < WNF_LOOP_LIMIT) {
+    wnf_loops++;
     if (reducing) {
       uint8_t tg = tag(next);
       uint32_t vl = val(next);
@@ -445,13 +448,15 @@ Term wnf(const thread Heap& heap, device Term* wnf_stack, device uint32_t* book,
       continue;
     }
   }
+  // Loop limit reached - return current term (incomplete reduction)
+  return next;
 }
 
 // SNF (Strong Normal Form)
 struct SNFFrame { Term term; uint32_t write_loc; uint32_t depth; uint8_t phase; };
 constant uint32_t SNF_ROOT = 0xFFFFFFFF;
 
-Term snf(const thread Heap& heap, device Term* wnf_stack, device SNFFrame* snf_stack, device uint32_t* book, thread State& st, Term term, thread uint32_t& max_wnf, thread uint32_t& max_snf) {
+Term snf(const thread Heap& heap, device Term* wnf_stack, device SNFFrame* snf_stack, device uint32_t* book, thread State& st, Term term, thread uint32_t& max_wnf, thread uint32_t& max_snf, thread uint32_t& wnf_loops, thread uint32_t& snf_loops) {
   uint32_t snf_pos = 0;
   snf_stack[snf_pos++] = SNFFrame{term, SNF_ROOT, 0, 0};
   if (snf_pos > max_snf) max_snf = snf_pos;
@@ -459,9 +464,10 @@ Term snf(const thread Heap& heap, device Term* wnf_stack, device SNFFrame* snf_s
   uint32_t sw = st.simd_width;
 
   while (snf_pos > 0) {
+    snf_loops++;
     SNFFrame frame = snf_stack[--snf_pos];
     if (frame.phase == 0) {
-      Term t = wnf(heap, wnf_stack, book, st, frame.term, max_wnf);
+      Term t = wnf(heap, wnf_stack, book, st, frame.term, max_wnf, wnf_loops);
       uint32_t ari = arity_of(t);
       if (ari == 0) {
         if (frame.write_loc != SNF_ROOT) heap.set(frame.write_loc, t);
@@ -527,11 +533,13 @@ kernel void hvm_run(
 
   uint32_t max_wnf = 0;
   uint32_t max_snf = 0;
+  uint32_t wnf_loops = 0;
+  uint32_t snf_loops = 0;
 
   Term main_term = new_term(0, REF, main_ref, 0);
-  Term result = snf(heap, wnf_stack, snf_stack, book, st, main_term, max_wnf, max_snf);
+  Term result = snf(heap, wnf_stack, snf_stack, book, st, main_term, max_wnf, max_snf, wnf_loops, snf_loops);
 
   itrs_out[tid] = st.itrs;
-  // Pack stats: heap_alloc (20 bits), max_wnf (20 bits), max_snf (20 bits) - fits in 60 bits
-  outputs[tid] = uint64_t(st.alloc) | (uint64_t(max_wnf) << 20) | (uint64_t(max_snf) << 40);
+  // Pack loop counts: wnf_loops (32 bits) | snf_loops (32 bits)
+  outputs[tid] = uint64_t(wnf_loops) | (uint64_t(snf_loops) << 32);
 }

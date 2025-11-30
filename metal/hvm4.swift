@@ -308,7 +308,7 @@ func runGPU(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ m
   let snfPerThrBuffer = device.makeBuffer(bytes: &snfPerThrVal, length: 8, options: .storageModeShared)!
   let simdWidthBuffer = device.makeBuffer(bytes: &simdWidthVal, length: 4, options: .storageModeShared)!
 
-  let threadsPerGroup = min(numThreads, pipeline.maxTotalThreadsPerThreadgroup)
+  let threadsPerGroup = min(numThreads, 256)
 
   // Warm up
   for _ in 0..<3 {
@@ -362,6 +362,15 @@ func runGPU(_ device: MTLDevice, _ shaderSource: String, _ bookSize: UInt32, _ m
   let itrsPtr = itrsBuffer.contents().bindMemory(to: UInt64.self, capacity: numThreads)
   var totalItrs: UInt64 = 0; for i in 0..<numThreads { totalItrs += itrsPtr[i] }
   let mips = Double(totalItrs) / wallTime / 1_000_000.0
+
+  // Read packed stats from outputs buffer
+  let outputsPtr = outputsBuffer.contents().bindMemory(to: UInt64.self, capacity: numThreads)
+  let packed = outputsPtr[0]  // Just read thread 0's stats
+  let wnfLoops = packed & 0xFFFFFFFF
+  let snfLoops = (packed >> 32) & 0xFFFFFFFF
+  if numThreads == 1 {
+    print("  [Thread 0 stats] wnf_loop_iterations=\(wnfLoops), snf_loop_iterations=\(snfLoops)")
+  }
 
   return BenchResult(time: wallTime, itrs: totalItrs, mips: mips)
 }
@@ -431,7 +440,7 @@ func main() {
     print("")
     print("Threads\tTime(s)\t\tIterations\tMIPS")
     print("-------\t-------\t\t----------\t----")
-    for n in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
+    for n in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] {
       let r = runGPU(device, shaderSource, bookSize, mainName, n)
       print("\(n)\t\(String(format: "%.6f", r.time))\t\(r.itrs)\t\t\(String(format: "%.2f", r.mips))")
     }
