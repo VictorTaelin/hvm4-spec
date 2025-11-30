@@ -7,8 +7,8 @@
 // ----------------------------
 // | SUB  (1 bit)   ::= marks heap slot as containing a substitution
 // | TAG  (7 bits)  ::= constructor variant (APP, LAM, SUP, etc.)
-// | EXT  (24 bits) ::= dup label, ctr name, or ref name
-// | VAL  (32 bits) ::= heap address or unboxed value
+// | EXT  (16 bits) ::= dup label, ctr name, or ref name
+// | VAL  (40 bits) ::= heap address or unboxed value
 
 #include <metal_stdlib>
 using namespace metal;
@@ -37,21 +37,21 @@ constant uint8_t CTR_MAX_ARI = 16;
 // Bit Layout
 constant uint64_t SUB_SHIFT = 63;
 constant uint64_t TAG_SHIFT = 56;
-constant uint64_t EXT_SHIFT = 32;
+constant uint64_t EXT_SHIFT = 40;
 constant uint64_t SUB_MASK = 0x1;
 constant uint64_t TAG_MASK = 0x7F;
-constant uint64_t EXT_MASK = 0xFFFFFF;
-constant uint64_t VAL_MASK = 0xFFFFFFFF;
+constant uint64_t EXT_MASK = 0xFFFF;
+constant uint64_t VAL_MASK = 0xFFFFFFFFFF;
 
 // Term Helpers
-inline Term new_term(uint8_t sub, uint8_t tag, uint32_t ext, uint32_t val) {
+inline Term new_term(uint8_t sub, uint8_t tag, uint32_t ext, uint64_t val) {
   return (uint64_t(sub) << SUB_SHIFT) | (uint64_t(tag & uint8_t(TAG_MASK)) << TAG_SHIFT)
-       | (uint64_t(ext & uint32_t(EXT_MASK)) << EXT_SHIFT) | uint64_t(val & uint32_t(VAL_MASK));
+       | (uint64_t(ext & uint32_t(EXT_MASK)) << EXT_SHIFT) | (val & VAL_MASK);
 }
 inline uint8_t sub_of(Term t) { return uint8_t((t >> SUB_SHIFT) & SUB_MASK); }
 inline uint8_t tag(Term t) { return uint8_t((t >> TAG_SHIFT) & TAG_MASK); }
 inline uint32_t ext(Term t) { return uint32_t((t >> EXT_SHIFT) & EXT_MASK); }
-inline uint32_t val(Term t) { return uint32_t(t & VAL_MASK); }
+inline uint64_t val(Term t) { return t & VAL_MASK; }
 
 inline uint32_t arity_of(Term t) {
   uint8_t tg = tag(t);
@@ -281,8 +281,11 @@ inline Term dup_node(const thread Heap& heap, thread State& st, uint32_t lab, ui
 }
 
 // Alloc Helpers
+// Note: bind entries pack two 32-bit values into 64 bits as (loc << 32) | tail
+constant uint64_t PAIR_LO_MASK = 0xFFFFFFFF;
+
 inline uint32_t bind_at(const thread Heap& heap, uint32_t ls, uint32_t idx) {
-  for (uint32_t i = 0; i < idx && ls != 0; i++) ls = uint32_t(heap.get(ls) & VAL_MASK);
+  for (uint32_t i = 0; i < idx && ls != 0; i++) ls = uint32_t(heap.get(ls) & PAIR_LO_MASK);
   return (ls != 0) ? uint32_t(heap.get(ls) >> 32) : 0;
 }
 
@@ -373,7 +376,7 @@ Term wnf(const thread Heap& heap, device Term* stack, device uint32_t* book, thr
       }
       if (tg == ALO) {
         uint64_t pair = heap.get(vl);
-        uint32_t tm_loc = uint32_t(pair & VAL_MASK);
+        uint32_t tm_loc = uint32_t(pair & PAIR_LO_MASK);
         uint32_t ls_loc = uint32_t(pair >> 32);
         Term bk = heap.get(tm_loc);
         uint8_t bt = tag(bk);

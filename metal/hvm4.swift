@@ -12,8 +12,8 @@ let CO0: UInt8 = 5, CO1: UInt8 = 6, VAR: UInt8 = 7, LAM: UInt8 = 8, APP: UInt8 =
 let SUP: UInt8 = 10, DUP: UInt8 = 11, MAT: UInt8 = 12, CTR: UInt8 = 13, CTR_MAX_ARI: UInt8 = 16
 
 // Bit Layout
-let SUB_SHIFT: UInt64 = 63, TAG_SHIFT: UInt64 = 56, EXT_SHIFT: UInt64 = 32
-let TAG_MASK: UInt64 = 0x7F, EXT_MASK: UInt64 = 0xFFFFFF, VAL_MASK: UInt64 = 0xFFFFFFFF
+let SUB_SHIFT: UInt64 = 63, TAG_SHIFT: UInt64 = 56, EXT_SHIFT: UInt64 = 40
+let TAG_MASK: UInt64 = 0x7F, EXT_MASK: UInt64 = 0xFFFF, VAL_MASK: UInt64 = 0xFFFFFFFFFF
 
 // Capacities
 let BOOK_CAP: Int = 1 << 24
@@ -26,13 +26,13 @@ var BOOK: UnsafeMutablePointer<UInt32>!
 var ALLOC: UInt64 = 1
 
 // Term Helpers
-@inline(__always) func newTerm(_ sub: UInt8, _ tag: UInt8, _ ext: UInt32, _ val: UInt32) -> Term {
+@inline(__always) func newTerm(_ sub: UInt8, _ tag: UInt8, _ ext: UInt32, _ val: UInt64) -> Term {
   (UInt64(sub) << SUB_SHIFT) | (UInt64(tag & UInt8(TAG_MASK)) << TAG_SHIFT)
-  | (UInt64(ext & UInt32(EXT_MASK)) << EXT_SHIFT) | UInt64(val & UInt32(VAL_MASK))
+  | (UInt64(ext & UInt32(EXT_MASK)) << EXT_SHIFT) | (val & VAL_MASK)
 }
 @inline(__always) func tag(_ t: Term) -> UInt8 { UInt8((t >> TAG_SHIFT) & TAG_MASK) }
 @inline(__always) func ext(_ t: Term) -> UInt32 { UInt32((t >> EXT_SHIFT) & EXT_MASK) }
-@inline(__always) func val(_ t: Term) -> UInt32 { UInt32(t & VAL_MASK) }
+@inline(__always) func val(_ t: Term) -> UInt64 { t & VAL_MASK }
 @inline(__always) func heapAlloc(_ size: UInt64) -> UInt64 { let at = ALLOC; ALLOC += size; return at }
 
 // Names
@@ -50,7 +50,7 @@ func charToB64(_ c: Character) -> Int {
 func isNameStart(_ c: Character) -> Bool { (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") }
 func isNameChar(_ c: Character) -> Bool { charToB64(c) >= 0 }
 
-func nameToStr(_ n: UInt32) -> String {
+func nameToStr(_ n: UInt64) -> String {
   if n == 0 { return "_" }
   var result = "", val = n, chars: [Character] = []
   while val > 0 {
@@ -62,27 +62,27 @@ func nameToStr(_ n: UInt32) -> String {
 }
 
 // Term Constructors
-func Var(_ loc: UInt32) -> Term { newTerm(0, VAR, 0, loc) }
+func Var(_ loc: UInt64) -> Term { newTerm(0, VAR, 0, loc) }
 func Ref(_ nam: UInt32) -> Term { newTerm(0, REF, nam, 0) }
 func Era() -> Term { newTerm(0, ERA, 0, 0) }
 
 func Lam(_ bod: Term) -> Term {
-  let loc = UInt32(heapAlloc(1)); HEAP[Int(loc)] = bod; return newTerm(0, LAM, 0, loc)
+  let loc = heapAlloc(1); HEAP[Int(loc)] = bod; return newTerm(0, LAM, 0, loc)
 }
 func App(_ fun: Term, _ arg: Term) -> Term {
-  let loc = UInt32(heapAlloc(2)); HEAP[Int(loc)] = fun; HEAP[Int(loc) + 1] = arg; return newTerm(0, APP, 0, loc)
+  let loc = heapAlloc(2); HEAP[Int(loc)] = fun; HEAP[Int(loc) + 1] = arg; return newTerm(0, APP, 0, loc)
 }
 func Sup(_ lab: UInt32, _ tm0: Term, _ tm1: Term) -> Term {
-  let loc = UInt32(heapAlloc(2)); HEAP[Int(loc)] = tm0; HEAP[Int(loc) + 1] = tm1; return newTerm(0, SUP, lab, loc)
+  let loc = heapAlloc(2); HEAP[Int(loc)] = tm0; HEAP[Int(loc) + 1] = tm1; return newTerm(0, SUP, lab, loc)
 }
 func Dup(_ lab: UInt32, _ v: Term, _ bod: Term) -> Term {
-  let loc = UInt32(heapAlloc(2)); HEAP[Int(loc)] = v; HEAP[Int(loc) + 1] = bod; return newTerm(0, DUP, lab, loc)
+  let loc = heapAlloc(2); HEAP[Int(loc)] = v; HEAP[Int(loc) + 1] = bod; return newTerm(0, DUP, lab, loc)
 }
 func Mat(_ nam: UInt32, _ v: Term, _ nxt: Term) -> Term {
-  let loc = UInt32(heapAlloc(2)); HEAP[Int(loc)] = v; HEAP[Int(loc) + 1] = nxt; return newTerm(0, MAT, nam, loc)
+  let loc = heapAlloc(2); HEAP[Int(loc)] = v; HEAP[Int(loc) + 1] = nxt; return newTerm(0, MAT, nam, loc)
 }
 func Ctr(_ nam: UInt32, _ args: [Term]) -> Term {
-  let loc = UInt32(heapAlloc(UInt64(args.count)))
+  let loc = heapAlloc(UInt64(args.count))
   for i in 0..<args.count { HEAP[Int(loc) + i] = args[i] }
   return newTerm(0, CTR + UInt8(args.count), nam, loc)
 }
@@ -150,14 +150,14 @@ func parseMatBody(_ s: inout PState, _ depth: UInt32) -> Term {
 func parseLam(_ s: inout PState, _ depth: UInt32) -> Term {
   skip(&s); if peek(s) == "{" { consume(&s, "{"); return parseMatBody(&s, depth) }
   let nam = parseName(&s); consume(&s, "."); bindPush(nam, depth, 0)
-  let loc = UInt32(heapAlloc(1)); let body = parseTerm(&s, depth + 1)
+  let loc = heapAlloc(1); let body = parseTerm(&s, depth + 1)
   HEAP[Int(loc)] = body; bindPop(); return newTerm(0, LAM, depth, loc)
 }
 
 func parseDup(_ s: inout PState, _ depth: UInt32) -> Term {
   let nam = parseName(&s); consume(&s, "&"); let lab = parseName(&s); consume(&s, "=")
   let v = parseTerm(&s, depth); skip(&s); _ = match(&s, ";"); skip(&s); bindPush(nam, depth, lab)
-  let loc = UInt32(heapAlloc(2)); HEAP[Int(loc)] = v
+  let loc = heapAlloc(2); HEAP[Int(loc)] = v
   let body = parseTerm(&s, depth + 1); HEAP[Int(loc) + 1] = body; bindPop()
   return newTerm(0, DUP, lab, loc)
 }
@@ -183,7 +183,7 @@ func parsePar(_ s: inout PState, _ depth: UInt32) -> Term { let term = parseTerm
 func parseVar(_ s: inout PState, _ depth: UInt32) -> Term {
   skip(&s); let nam = parseName(&s); let (idx, lab) = bindLookup(nam, depth); skip(&s)
   var side = -1; if match(&s, "₀") { side = 0 } else if match(&s, "₁") { side = 1 }; skip(&s)
-  let v = idx >= 0 ? UInt32(idx) : nam; let tg: UInt8 = side == 0 ? CO0 : (side == 1 ? CO1 : VAR)
+  let v: UInt64 = idx >= 0 ? UInt64(idx) : UInt64(nam); let tg: UInt8 = side == 0 ? CO0 : (side == 1 ? CO1 : VAR)
   return newTerm(0, tg, lab, v)
 }
 
@@ -215,7 +215,7 @@ func parseDef(_ s: inout PState) {
   skip(&s); if atEnd(s) { return }
   if match(&s, "@") {
     let nam = parseName(&s) & UInt32(EXT_MASK); consume(&s, "="); PARSE_BINDS = []
-    let v = parseTerm(&s, 0); let loc = UInt32(heapAlloc(1)); HEAP[Int(loc)] = v; BOOK[Int(nam)] = loc
+    let v = parseTerm(&s, 0); let loc = heapAlloc(1); HEAP[Int(loc)] = v; BOOK[Int(nam)] = UInt32(loc)
     parseDef(&s); return
   }
   parseError(s, "definition", peek(s))
@@ -225,12 +225,12 @@ func parseDef(_ s: inout PState) {
 func strTerm(_ heap: UnsafePointer<Term>, _ term: Term, _ depth: UInt32 = 0) -> String {
   switch tag(term) {
     case VAR, NAM: return nameToStr(val(term))
-    case REF: return "@\(nameToStr(ext(term)))"
+    case REF: return "@\(nameToStr(UInt64(ext(term))))"
     case ERA: return "&{}"
     case CO0: return "\(nameToStr(val(term)))₀"
     case CO1: return "\(nameToStr(val(term)))₁"
     case LAM:
-      let loc = val(term), nam = depth + 1
+      let loc = val(term), nam = UInt64(depth + 1)
       return "λ\(nameToStr(nam)).\(strTerm(heap, heap[Int(loc)], depth + 1))"
     case APP, DRY:
       var spine: [Term] = [], curr = term
@@ -242,18 +242,18 @@ func strTerm(_ heap: UnsafePointer<Term>, _ term: Term, _ depth: UInt32 = 0) -> 
       return result + ")"
     case SUP:
       let loc = val(term)
-      return "&\(nameToStr(ext(term))){\(strTerm(heap, heap[Int(loc)], depth)),\(strTerm(heap, heap[Int(loc) + 1], depth))}"
+      return "&\(nameToStr(UInt64(ext(term)))){\(strTerm(heap, heap[Int(loc)], depth)),\(strTerm(heap, heap[Int(loc) + 1], depth))}"
     case DUP:
-      let loc = val(term), nam = depth + 1
-      return "!\(nameToStr(nam))&\(nameToStr(ext(term)))=\(strTerm(heap, heap[Int(loc)], depth));\(strTerm(heap, heap[Int(loc) + 1], depth + 1))"
+      let loc = val(term), nam = UInt64(depth + 1)
+      return "!\(nameToStr(nam))&\(nameToStr(UInt64(ext(term))))=\(strTerm(heap, heap[Int(loc)], depth));\(strTerm(heap, heap[Int(loc) + 1], depth + 1))"
     case MAT:
       let loc = val(term)
-      return "λ{#\(nameToStr(ext(term))):\(strTerm(heap, heap[Int(loc)], depth));\(strTerm(heap, heap[Int(loc) + 1], depth))}"
+      return "λ{#\(nameToStr(UInt64(ext(term)))):\(strTerm(heap, heap[Int(loc)], depth));\(strTerm(heap, heap[Int(loc) + 1], depth))}"
     case ALO: return "<ALO>"
     default:
       if tag(term) >= CTR && tag(term) <= CTR + CTR_MAX_ARI {
         let ari = Int(tag(term) - CTR), loc = val(term)
-        var result = "#\(nameToStr(ext(term))){"
+        var result = "#\(nameToStr(UInt64(ext(term)))){"
         for i in 0..<ari { if i > 0 { result += "," }; result += strTerm(heap, heap[Int(loc) + i], depth) }
         return result + "}"
       }
@@ -418,7 +418,7 @@ func main() {
 
   guard let shaderSource = loadShaderSource() else { fputs("Error: Could not load hvm4.metal\n", stderr); exit(1) }
 
-  if benchMode {
+/*  if benchMode {*/
     print("=== HVM4 Metal Benchmark ===")
     print("Device: \(device.name)")
     print("")
@@ -428,13 +428,13 @@ func main() {
       let r = runGPU(device, shaderSource, bookSize, mainName, n)
       print("\(n)\t\(String(format: "%.6f", r.time))\t\(r.itrs)\t\t\(String(format: "%.2f", r.mips))")
     }
-  } else {
-    let r = runGPU(device, shaderSource, bookSize, mainName, numThreads)
-    print("Threads: \(numThreads)")
-    print("Iterations: \(r.itrs)")
-    print("Time: \(String(format: "%.6f", r.time))s")
-    print("Performance: \(String(format: "%.2f", r.mips)) MIPS")
-  }
+/*  } else {*/
+/*    let r = runGPU(device, shaderSource, bookSize, mainName, numThreads)*/
+/*    print("Threads: \(numThreads)")*/
+/*    print("Iterations: \(r.itrs)")*/
+/*    print("Time: \(String(format: "%.6f", r.time))s")*/
+/*    print("Performance: \(String(format: "%.2f", r.mips)) MIPS")*/
+/*  }*/
 }
 
 main()
