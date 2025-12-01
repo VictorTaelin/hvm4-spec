@@ -1,0 +1,4 @@
+#include "_book_.hvm4"
+@add = λ{λx.λ{λy.@@add(x,y)}}
+@main = @add(2,3)
+//5

@@ -10,8 +10,12 @@ fn u32 term_arity(Term t) {
     case SUP:
     case DUP:
     case MAT:
+    case SWI:
     case DRY: {
       return 2;
+    }
+    case USE: {
+      return 1;
     }
     case NUM: {
       return 0;

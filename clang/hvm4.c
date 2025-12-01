@@ -59,23 +59,25 @@ typedef struct {
 #define C15 28
 #define C16 29
 #define NUM 30
-#define P00 31
-#define P01 32
-#define P02 33
-#define P03 34
-#define P04 35
-#define P05 36
-#define P06 37
-#define P07 38
-#define P08 39
-#define P09 40
-#define P10 41
-#define P11 42
-#define P12 43
-#define P13 44
-#define P14 45
-#define P15 46
-#define P16 47
+#define SWI 31
+#define USE 32
+#define P00 33
+#define P01 34
+#define P02 35
+#define P03 36
+#define P04 37
+#define P05 38
+#define P06 39
+#define P07 40
+#define P08 41
+#define P09 42
+#define P10 43
+#define P11 44
+#define P12 45
+#define P13 46
+#define P14 47
+#define P15 48
+#define P16 49
 
 // Bit Layout
 // ==========
@@ -184,6 +186,8 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "term/new/sup.c"
 #include "term/new/dup.c"
 #include "term/new/mat.c"
+#include "term/new/swi.c"
+#include "term/new/use.c"
 #include "term/new/ctr.c"
 #include "term/new/pri.c"
 #include "term/new/num.c"

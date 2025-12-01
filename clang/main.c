@@ -51,11 +51,12 @@ typedef struct {
   int   stats;
   int   do_collapse;
   int   collapse_limit;  // -1 means no limit
+  int   debug;
   char *file;
 } CliOpts;
 
 fn CliOpts parse_opts(int argc, char **argv) {
-  CliOpts opts = { .stats = 0, .do_collapse = 0, .collapse_limit = -1, .file = NULL };
+  CliOpts opts = { .stats = 0, .do_collapse = 0, .collapse_limit = -1, .debug = 0, .file = NULL };
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-s") == 0) {
@@ -65,6 +66,8 @@ fn CliOpts parse_opts(int argc, char **argv) {
       if (argv[i][2] != '\0') {
         opts.collapse_limit = atoi(&argv[i][2]);
       }
+    } else if (strcmp(argv[i], "-d") == 0) {
+      opts.debug = 1;
     } else if (argv[i][0] != '-') {
       if (opts.file == NULL) {
         opts.file = argv[i];
@@ -101,6 +104,9 @@ int main(int argc, char **argv) {
   if (!BOOK || !HEAP || !STACK) {
     sys_error("Memory allocation failed");
   }
+
+  // Set debug mode
+  DEBUG = opts.debug;
 
   // Read and parse file
   char *src = sys_file_read(opts.file);

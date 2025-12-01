@@ -9,6 +9,24 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       parse_consume(s, "}");
       return term_new_era();
     }
+    // Check for SWI: λ{123: f; g}
+    if (isdigit(parse_peek(s))) {
+      u32 num = 0;
+      while (isdigit(parse_peek(s))) {
+        num = num * 10 + (parse_peek(s) - '0');
+        parse_advance(s);
+      }
+      parse_skip(s);
+      parse_consume(s, ":");
+      Term f = parse_term(s, depth);
+      parse_skip(s);
+      parse_consume(s, ";");
+      Term g = parse_term(s, depth);
+      parse_skip(s);
+      parse_consume(s, "}");
+      return term_new_swi(num, f, g);
+    }
+    // Check for MAT: λ{#Name: ...} or USE: λ{f}
     Term mat = term_new_era();
     Term *tip = &mat;
     while (1) {
@@ -29,6 +47,15 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         parse_consume(s, "}");
         return mat;
       } else {
+        // USE: λ{f} - single term without # prefix
+        if (mat == term_new_era()) {
+          // No MAT cases yet, this is a USE
+          Term f = parse_term(s, depth);
+          parse_skip(s);
+          parse_consume(s, "}");
+          return term_new_use(f);
+        }
+        // Default case for MAT
         *tip = parse_term(s, depth);
         parse_consume(s, "}");
         return mat;

@@ -110,6 +110,25 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
       fputc('}', f);
       break;
     }
+    case SWI: {
+      u32 loc = term_val(term);
+      u32 num = term_ext(term);
+      fputs("λ{", f);
+      fprintf(f, "%u", num);
+      fputc(':', f);
+      print_term_go(f, HEAP[loc + 0], depth);
+      fputc(';', f);
+      print_term_go(f, HEAP[loc + 1], depth);
+      fputc('}', f);
+      break;
+    }
+    case USE: {
+      u32 loc = term_val(term);
+      fputs("λ{", f);
+      print_term_go(f, HEAP[loc], depth);
+      fputc('}', f);
+      break;
+    }
     case C00 ... C16: {
       u32 ari = term_tag(term) - C00;
       u32 loc = term_val(term);
