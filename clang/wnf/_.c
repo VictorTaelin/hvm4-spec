@@ -93,8 +93,10 @@ fn Term wnf(Term term) {
           case APP:
           case SUP:
           case MAT:
-          case C00 ... C16: {
-            next = wnf_alo_node(ls_loc, term_val(book), term_tag(book), term_ext(book), term_arity(book));
+          case C00 ... C16:
+          case P00 ... P16: {
+            u32 ari = (term_tag(book) >= P00) ? (term_tag(book) - P00) : term_arity(book);
+            next = wnf_alo_node(ls_loc, term_val(book), term_tag(book), term_ext(book), ari);
             goto enter;
           }
           case DUP: {
@@ -111,6 +113,16 @@ fn Term wnf(Term term) {
             goto enter;
           }
         }
+      }
+
+      case P00 ... P16: {
+        // Call the primitive directly (it handles strict evaluation internally)
+        u32  nam = term_ext(next);
+        u32  ari = term_tag(next) - P00;
+        u32  loc = term_val(next);
+        ITRS++;
+        next = prim_call(nam, ari, loc);
+        goto enter;
       }
 
       case NAM:
@@ -174,10 +186,6 @@ fn Term wnf(Term term) {
               STACK[S_POS++] = whnf;
               next = arg;
               goto enter;
-            }
-            case C00 ... C16: {
-              whnf = wnf_app_ctr(whnf, arg);
-              continue;
             }
             default: {
               whnf = term_new_app(whnf, arg);

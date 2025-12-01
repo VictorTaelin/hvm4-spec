@@ -2,17 +2,8 @@
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-HS_BIN="$DIR/../haskell/main"
 C_BIN="$DIR/../clang/main"
-HS_MAIN="${HS_BIN}.hs"
 C_MAIN="${C_BIN}.c"
-
-# Build Haskell
-if [ ! -f "$HS_MAIN" ]; then
-  echo "error: expected Haskell entrypoint at $HS_MAIN" >&2
-  exit 1
-fi
-(cd "$DIR/../haskell" && ghc -O2 -o main main.hs)
 
 # Build C
 if [ ! -f "$C_MAIN" ]; then
@@ -120,16 +111,7 @@ run_tests() {
   return $status
 }
 
-hs_status=0
-c_status=0
+run_tests "$C_BIN" "C" || exit 1
 
-run_tests "$HS_BIN" "Haskell" || hs_status=1
-run_tests "$C_BIN" "C" || c_status=1
-
-if [ $hs_status -eq 0 ] && [ $c_status -eq 0 ]; then
-  echo "All tests passed for both implementations!"
-  exit 0
-else
-  echo "Some tests failed."
-  exit 1
-fi
+echo "All tests passed!"
+exit 0

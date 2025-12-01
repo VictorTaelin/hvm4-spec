@@ -126,6 +126,22 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
       fputc('}', f);
       break;
     }
+    case P00 ... P16: {
+      u32 ari = term_tag(term) - P00;
+      u32 loc = term_val(term);
+      u32 nam = term_ext(term);
+      fputs("@@", f);
+      print_name(f, nam);
+      fputc('(', f);
+      for (u32 i = 0; i < ari; i++) {
+        if (i > 0) {
+          fputc(',', f);
+        }
+        print_term_go(f, HEAP[loc + i], depth);
+      }
+      fputc(')', f);
+      break;
+    }
     case ALO: {
       fputs("<ALO>", f);
       break;

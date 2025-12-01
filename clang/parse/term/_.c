@@ -9,6 +9,8 @@ fn Term parse_term(PState *s, u32 depth) {
     t = parse_term_sup(s, depth);
   } else if (parse_match(s, "#")) {
     t = parse_term_ctr(s, depth);
+  } else if (parse_match(s, "@@")) {
+    t = parse_term_pri(s, depth);
   } else if (parse_match(s, "@")) {
     t = parse_term_ref(s);
   } else if (parse_match(s, "(")) {

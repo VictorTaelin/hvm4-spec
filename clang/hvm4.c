@@ -59,6 +59,23 @@ typedef struct {
 #define C15 28
 #define C16 29
 #define NUM 30
+#define P00 31
+#define P01 32
+#define P02 33
+#define P03 34
+#define P04 35
+#define P05 36
+#define P06 37
+#define P07 38
+#define P08 39
+#define P09 40
+#define P10 41
+#define P11 42
+#define P12 43
+#define P13 44
+#define P14 45
+#define P15 46
+#define P16 47
 
 // Bit Layout
 // ==========
@@ -168,6 +185,7 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "term/new/dup.c"
 #include "term/new/mat.c"
 #include "term/new/ctr.c"
+#include "term/new/pri.c"
 #include "term/new/num.c"
 #include "term/clone.c"
 
@@ -223,10 +241,17 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "parse/term/par.c"
 #include "parse/term/num.c"
 #include "parse/term/var.c"
+#include "parse/term/args.c"
 #include "parse/term/app.c"
+#include "parse/term/pri.c"
 #include "parse/term/_.c"
 #include "parse/include.c"
 #include "parse/def.c"
+
+// Primitives
+// ==========
+
+#include "prim/_.c"
 
 // WNF
 // ===
@@ -234,7 +259,6 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "wnf/app_era.c"
 #include "wnf/app_nam.c"
 #include "wnf/app_dry.c"
-#include "wnf/app_ctr.c"
 #include "wnf/app_lam.c"
 #include "wnf/app_sup.c"
 #include "wnf/app_mat_sup.c"
