@@ -9,5 +9,5 @@ fn Term wnf_alo_dup(u32 ls_loc, u32 book_loc, u32 lab) {
   HEAP[alo1] = ((u64)ls_loc << 32) | (book_loc + 0);
   u64 alo2 = heap_alloc(1);
   HEAP[alo2] = ((u64)(u32)bind_ent << 32) | (book_loc + 1);
-  return term_dup(lab, term_new(0, ALO, 0, alo1), term_new(0, ALO, 0, alo2));
+  return term_new_dup(lab, term_new(0, ALO, 0, alo1), term_new(0, ALO, 0, alo2));
 }

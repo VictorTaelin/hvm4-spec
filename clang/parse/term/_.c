@@ -1,0 +1,22 @@
+fn Term parse_term(PState *s, u32 depth) {
+  parse_skip(s);
+  Term t;
+  if (parse_match(s, "λ")) {
+    t = parse_term_lam(s, depth);
+  } else if (parse_match(s, "!")) {
+    t = parse_term_dup(s, depth);
+  } else if (parse_match(s, "&")) {
+    t = parse_term_sup(s, depth);
+  } else if (parse_match(s, "#")) {
+    t = parse_term_ctr(s, depth);
+  } else if (parse_match(s, "@")) {
+    t = parse_term_ref(s);
+  } else if (parse_match(s, "(")) {
+    t = parse_term_par(s, depth);
+  } else if (isdigit(parse_peek(s))) {
+    t = parse_term_num(s);
+  } else {
+    t = parse_term_var(s, depth);
+  }
+  return parse_term_app(t, s, depth);
+}

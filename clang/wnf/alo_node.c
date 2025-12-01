@@ -5,5 +5,5 @@ fn Term wnf_alo_node(u32 ls_loc, u32 loc, u8 tag, u32 ext, u32 ari) {
     HEAP[alo_loc] = ((u64)ls_loc << 32) | (loc + i);
     args[i] = term_new(0, ALO, 0, alo_loc);
   }
-  return term_make(tag, ext, ari, args);
+  return term_new_(tag, ext, ari, args);
 }

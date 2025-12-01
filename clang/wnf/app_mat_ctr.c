@@ -4,10 +4,10 @@ fn Term wnf_app_mat_ctr(Term mat, Term ctr) {
   if (term_ext(mat) == term_ext(ctr)) {
     Term res = HEAP[term_val(mat)];
     for (u32 i = 0; i < ari; i++) {
-      res = term_app(res, HEAP[term_val(ctr) + i]);
+      res = term_new_app(res, HEAP[term_val(ctr) + i]);
     }
     return res;
   } else {
-    return term_app(HEAP[term_val(mat) + 1], ctr);
+    return term_new_app(HEAP[term_val(mat) + 1], ctr);
   }
 }

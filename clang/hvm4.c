@@ -1,212 +1,3 @@
-// HVM4 Runtime Implementation in C
-// =================================
-//
-// This file implements the HVM4, an Interaction Calculus runtime, ported from
-// Haskell. It includes parsing, stringification, and a stack-based weak normal
-// form (WNF) evaluator with all interaction rules.
-//
-// Term Pointer Layout (64-bit)
-// ----------------------------
-// | SUB  (1 bit)   ::= marks heap slot as containing a substitution
-// | TAG  (7 bits)  ::= constructor variant (APP, LAM, SUP, etc.)
-// | EXT  (24 bits) ::= dup label, ctr name, or ref name
-// | VAL  (32 bits) ::= heap address or unboxed value
-//
-// Tag Encoding
-// ------------
-// - CO0/CO1: Two tags for Cop (copy) nodes, representing sides 0 and 1
-// - C00...C16: Constructor tags encode arity directly (C00+n for n fields)
-// - Names (variable, constructor, reference) use 6-char base64 strings encoded
-//   as 24-bit integers fitting in the EXT field
-//
-// Memory Model (No Separate Maps)
-// -------------------------------
-// Unlike the Haskell version which uses IntMaps for 'dups' and 'subs', this
-// implementation stores everything directly on the heap:
-//
-// - DUP nodes: Stored inline on heap. CO0/CO1 point to a dup node holding the
-//   duplicated expression (label stored in CO0/CO1's EXT field).
-//
-// - Substitutions: Stored where the lambda's body, or duplicator expression,
-//   was. When app_lam fires, the argument replaces the lambda body slot. The
-//   SUB bit distinguishes actual terms from substitutions, allowing VAR, CO0
-//   and CO1 to detect whether their target is a binding node or a subst.
-//
-// Book vs Runtime Term Representation
-// -----------------------------------
-// Book terms (parsed definitions) use de Bruijn indices and are immutable:
-//   - VAR: ext = 0         ; val = bru_index
-//   - CO_: ext = dup_label ; val = bru_index
-//   - LAM: ext = bru_depth ; val = body_location
-//   - DUP: ext = dup_label ; val = expr_location
-//
-// Runtime terms (after ALO allocation) use heap locations:
-//   - VAR : ext = 0         ; val = binding_lam_body_location
-//   - CO_ : ext = dup_label ; val = binding_dup_expr_location
-//   - LAM : ext = 0         ; val = expr_location
-//   - DUP : ext = 0         ; val = expr_location
-//
-// ALO (Allocation) Nodes
-// ----------------------
-// ALO terms reference immutable book entries and lazily convert them to
-// runtime terms. Each ALO stores a pair (bind_list, book_term_loc) packed
-// into a single 64-bit heap word:
-//   - Low 32 bits: book term location
-//   - High 32 bits: bind list head (linked list of binder locations)
-//
-// The bind list maps de Bruijn levels to runtime heap locations of binding
-// LAM/DUP nodes. When an ALO interaction occurs, one layer of the book term
-// is extracted and converted to a runtime term.
-//
-// Stack-Based WNF Evaluator
-// -------------------------
-//   To avoid stack overflow, WNF uses an explicit stack with two phases:
-//
-//   REDUCE phase: Push eliminators onto stack and descend into their targets
-//     - APP: push frame, enter function
-//     - MAT: push frame, enter scrutinee (after MAT reaches head position)
-//     - CO0/CO1: push frame, enter dup'd expression
-//
-//   APPLY phase: Pop frames and dispatch interactions based on WHNF result
-//
-//   DUP and ALO don't push stack frames since they immediately trigger their
-//   respective interactions without requiring sub-WNF results first.
-//
-// Internal-Only Constructs
-// ------------------------
-// These nodes are internal and not parseable:
-// - ALO: lazy alloc
-// Stuck terms use special CTR names:
-// - #VAR{#name{}}: stuck variable (name encoded as 0-arity CTR)
-// - #APP{f,x}: stuck application
-//
-// Collapse Function
-// -----------------
-// Extracts superpositions (SUP) to the top level. For each term type:
-// 1. Collapse subterms recursively
-// 2. Build a template: nested lambdas that reconstruct the term
-// 3. Call inject(template, collapsed_subterms)
-// This will move the term to inside SUP layers, 'collapsing' it.
-//
-// Key: VARs in templates must point to their binding lambda's body location.
-// For LAM, the inner lambda MUST reuse lam_loc so existing VARs stay bound.
-//
-// Style Guide
-// -----------
-// Abide to the guidelines below strictly!
-//
-// > NEVER write single-line ifs, loops, statements, functions.
-//
-//   Don't:
-//     if { ... }
-//     while { ... }
-//     u32 foo(x) { ... }
-//     foo(); bar();
-//
-//   Do:
-//     if {
-//       ...
-//     }
-//     while {
-//       ...
-//     }
-//     u32 foo(x) {
-//       ...
-//     }
-//     foo();
-//     bar();
-//
-// > ALWAYS use switch for Term pattern matching.
-//
-//   Don't:
-//     if (tag == FOO) {
-//       ...
-//     } else if (tag == BAR) {
-//       ...
-//     } ...
-//
-//   Do:
-//     switch (tag) {
-//       case FOO: {
-//         ...
-//       }
-//       case BAR: {
-//         ...
-//       }
-//     }
-//
-// > Aggressively abstract common patterns (DRY).
-//
-//   When a pattern is repeated in multiple places:
-//
-//   Don't:
-//     fn Term <many_fns>(...) {
-//       ...
-//       if (side == 0) {
-//         subst_var(loc, res1);
-//         return res0;
-//       } else {
-//         subst_var(loc, res0);
-//         return res1;
-//       }
-//    }
-//
-//   Do:
-//     fn Term subst_cop(u8 side, u32 loc, Term r0, Term r1) {
-//       subst_var(loc, side == 0 ? r1 : r0);
-//       return side == 0 ? r0 : r1;
-//     }
-//     fn Term <many_fns>(...) {
-//       ...
-//       return subst_cop(side, loc, res0, res1);
-//     }
-//
-//   In general, spend some time reasoning about opportunities to apply the DRY
-//   principle, extracting common patterns out to reduce code size. We greatly
-//   appreciate simplicity brought by good abstractions!
-//
-// > Align columns whenever reasonable; adjust names as needed.
-//
-//   Don't:
-//
-//   Term abc = foo;
-//   u32 x = 123;
-//   Term the_amazing_cat = bar;
-//
-//   Do:
-//
-//   Term abc = foo;
-//   u32  x   = 123;
-//   Term cat = bar;
-//
-//   Don't:
-//
-//   foo[x] = 123;
-//   foo[x+1] = 456;
-//
-//   Do:
-//
-//   foo[x+0] = 123;
-//   foo[x+1] = 456;
-//
-// > Separate sessions with markdown-inspired headers.
-//
-//   Don't:
-//
-//   ---------------------------------
-//   File Session
-//   ---------------------------------
-//
-//   Do:
-//
-//   File Session
-//   ============
-//
-//   File Sub-Session
-//   ----------------
-//
-//   ### File Sub-Sub-Session
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -214,48 +5,186 @@
 #include <ctype.h>
 #include <time.h>
 
-// Term
+// Types
+// =====
+
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef u64 Term;
+
+typedef struct {
+  Term k0;
+  Term k1;
+} Copy;
+
+// Function Definition Macro
+// =========================
+
+#define fn static inline
+
+// Tags
 // ====
 
-#include "term/_.c"
+#define REF  0
+#define ALO  1
+#define ERA  2
+#define CO0  3
+#define CO1  4
+#define VAR  5
+#define LAM  6
+#define APP  7
+#define SUP  8
+#define DUP  9
+#define MAT 10
+#define C00 11
+#define C01 12
+#define C02 13
+#define C03 14
+#define C04 15
+#define C05 16
+#define C06 17
+#define C07 18
+#define C08 19
+#define C09 20
+#define C10 21
+#define C11 22
+#define C12 23
+#define C13 24
+#define C14 25
+#define C15 26
+#define C16 27
+#define NUM 28
+
+// Special constructor names for stuck terms
+// =========================================
+
+#define _VAR_ 198380  // name_to_int("VAR")
+#define _APP_ 113322  // name_to_int("APP")
+
+// Bit Layout
+// ==========
+
+#define SUB_BITS 1
+#define TAG_BITS 7
+#define EXT_BITS 24
+#define VAL_BITS 32
+
+#define SUB_SHIFT 63
+#define TAG_SHIFT 56
+#define EXT_SHIFT 32
+#define VAL_SHIFT 0
+
+#define SUB_MASK 0x1
+#define TAG_MASK 0x7F
+#define EXT_MASK 0xFFFFFF
+#define VAL_MASK 0xFFFFFFFF
+
+// Capacities
+// ==========
+
+#define HEAP_CAP (1ULL << 32)
+#define BOOK_CAP (1ULL << 24)
+#define WNF_CAP  (1ULL << 32)
+
+// Heap Globals
+// ============
+
+static Term *HEAP;
+static u64   ALLOC = 1;
+
+// Book Globals
+// ============
+
+static u32 *BOOK;
+
+// WNF Globals
+// ===========
+
+static Term *STACK;
+static u32   S_POS = 1;
+static u64   ITRS  = 0;
+static int   DEBUG = 0;
+
+// Nick Alphabet
+// =============
+
+static const char *nick_alphabet = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$";
+
+// Stringifier Modes
+// =================
+
+#define STR_LOG 0
+#define STR_BUF 1
+
+// Stringifier Globals
+// ===================
+
+static u8    STR_MODE     = STR_LOG;
+static char *TERM_BUF     = NULL;
+static u32   TERM_BUF_POS = 0;
+static u32   TERM_BUF_CAP = 0;
+
+// Parser Types
+// ============
+
+typedef struct {
+  char *file;
+  char *src;
+  u32   pos;
+  u32   len;
+  u32   line;
+  u32   col;
+} PState;
+
+typedef struct {
+  u32 name;
+  u32 depth;
+  u32 lab;
+} PBind;
+
+// Parser Globals
+// ==============
+
+static char  *PARSE_SEEN_FILES[1024];
+static u32    PARSE_SEEN_FILES_LEN = 0;
+static PBind  PARSE_BINDS[16384];
+static u32    PARSE_BINDS_LEN = 0;
+
+// Term
+// ====
 #include "term/new.c"
 #include "term/sub.c"
 #include "term/tag.c"
 #include "term/ext.c"
 #include "term/val.c"
 #include "term/arity.c"
-#include "term/mark_sub.c"
-#include "term/clear_sub.c"
+#include "term/mark.c"
+#include "term/unmark.c"
 
 // Heap
 // ====
 
-#include "heap/_.c"
 #include "heap/alloc.c"
 
 // Term Constructors
 // =================
 
-#include "term/make_at.c"
-#include "term/make.c"
-#include "term/var.c"
-#include "term/ref.c"
-#include "term/era.c"
-#include "term/co0.c"
-#include "term/co1.c"
-#include "term/lam_at.c"
-#include "term/lam.c"
-#include "term/app_at.c"
-#include "term/app.c"
-#include "term/sup_at.c"
-#include "term/sup.c"
-#include "term/dup_at.c"
-#include "term/dup.c"
-#include "term/mat_at.c"
-#include "term/mat.c"
-#include "term/ctr_at.c"
-#include "term/ctr.c"
-#include "term/num.c"
+#include "term/new/_.c"
+#include "term/new/var.c"
+#include "term/new/ref.c"
+#include "term/new/era.c"
+#include "term/new/co0.c"
+#include "term/new/co1.c"
+#include "term/new/lam.c"
+#include "term/new/app.c"
+#include "term/new/sup.c"
+#include "term/new/dup.c"
+#include "term/new/mat.c"
+#include "term/new/ctr.c"
+#include "term/new/num.c"
 #include "term/clone_at.c"
 #include "term/clone.c"
 #include "term/clone_many.c"
@@ -266,17 +195,12 @@
 #include "heap/subst_var.c"
 #include "heap/subst_cop.c"
 
-// Book
+// Nick
 // ====
 
-#include "book/_.c"
-
-// Letter
-// ======
-
-#include "letter/alphabet.c"
-#include "letter/to_b64.c"
-#include "letter/is_name_char.c"
+#include "nick/letter_to_b64.c"
+#include "nick/is_init.c"
+#include "nick/is_char.c"
 
 // System
 // ======
@@ -288,7 +212,6 @@
 // Print
 // =====
 
-#include "print/_.c"
 #include "print/str_putc.c"
 #include "print/str_puts.c"
 #include "print/str_name.c"
@@ -303,7 +226,6 @@
 // Parse
 // =====
 
-#include "parse/_.c"
 #include "parse/error.c"
 #include "parse/at_end.c"
 #include "parse/peek_at.c"
@@ -319,12 +241,22 @@
 #include "parse/bind_pop.c"
 #include "parse/bind_lookup.c"
 #include "parse/name.c"
-#include "parse/term.c"
+#include "parse/term/lam.c"
+#include "parse/term/dup.c"
+#include "parse/term/sup.c"
+#include "parse/term/ctr.c"
+#include "parse/term/ref.c"
+#include "parse/term/par.c"
+#include "parse/term/num.c"
+#include "parse/term/var.c"
+#include "parse/term/app.c"
+#include "parse/term/_.c"
+#include "parse/include.c"
+#include "parse/def.c"
 
 // WNF
 // ===
 
-#include "wnf/_.c"
 #include "wnf/app_era.c"
 #include "wnf/app_ctr.c"
 #include "wnf/app_lam.c"
@@ -339,7 +271,7 @@
 #include "wnf/alo_lam.c"
 #include "wnf/alo_dup.c"
 #include "wnf/alo_node.c"
-#include "wnf/wnf.c"
+#include "wnf/_.c"
 
 // SNF
 // ===

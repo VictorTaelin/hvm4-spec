@@ -16,7 +16,7 @@ fn Term collapse(Term term) {
       u64  loc = term_val(term);
       Term a   = collapse(HEAP[loc + 0]);
       Term b   = collapse(HEAP[loc + 1]);
-      return term_sup(term_ext(term), a, b);
+      return term_new_sup(term_ext(term), a, b);
     }
 
     case LAM: {
@@ -70,7 +70,7 @@ fn Term collapse(Term term) {
       }
 
       // Build the node with vars using arity-generic constructor
-      Term node = term_make(term_tag(term), term_ext(term), ari, vars);
+      Term node = term_new_(term_tag(term), term_ext(term), ari, vars);
 
       // Build nested lambdas from inside out
       Term body = node;

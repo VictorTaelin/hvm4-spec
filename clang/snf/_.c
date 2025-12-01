@@ -8,8 +8,8 @@ fn Term snf(Term term, u32 depth) {
   if (term_tag(term) == LAM) {
     Term body = HEAP[loc];
     // #VAR{#depth{}} for stuck variable
-    Term name_ctr = term_ctr(depth + 1, 0, NULL);
-    heap_subst_var(loc, term_ctr(_VAR_, 1, (Term[]){name_ctr}));
+    Term name_ctr = term_new_ctr(depth + 1, 0, NULL);
+    heap_subst_var(loc, term_new_ctr(_VAR_, 1, (Term[]){name_ctr}));
     HEAP[loc] = snf(body, depth + 1);
   } else {
     for (u32 i = 0; i < ari; i++) {

@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
   u32 main_name = 0;
   const char *p = "main";
   while (*p) {
-    main_name = ((main_name << 6) + letter_to_b64(*p)) & EXT_MASK;
+    main_name = ((main_name << 6) + nick_letter_to_b64(*p)) & EXT_MASK;
     p++;
   }
 
@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
   struct timespec start, end;
   clock_gettime(CLOCK_MONOTONIC, &start);
 
-  Term main_ref = term_ref(main_name);
+  Term main_ref = term_new_ref(main_name);
   Term result;
   if (opts.do_collapse) {
     result = snf(collapse(main_ref), 0);

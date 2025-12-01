@@ -1,4 +1,4 @@
 fn Term wnf_app_era(void) {
   ITRS++;
-  return term_era();
+  return term_new_era();
 }

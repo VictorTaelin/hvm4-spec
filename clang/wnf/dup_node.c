@@ -14,7 +14,7 @@ fn Term wnf_dup_node(u32 lab, u32 loc, u8 side, Term term) {
     args0[i] = A.k0;
     args1[i] = A.k1;
   }
-  Term r0 = term_make(t_tag, t_ext, ari, args0);
-  Term r1 = term_make(t_tag, t_ext, ari, args1);
+  Term r0 = term_new_(t_tag, t_ext, ari, args0);
+  Term r1 = term_new_(t_tag, t_ext, ari, args1);
   return heap_subst_cop(side, loc, r0, r1);
 }

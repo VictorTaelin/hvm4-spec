@@ -25,10 +25,10 @@ fn Term collapse_inject(Term template, Term *args, u32 n_args) {
     Term r0 = collapse_inject(T.k0, args0, n_args);
     Term r1 = collapse_inject(T.k1, args1, n_args);
 
-    return term_sup(lab, r0, r1);
+    return term_new_sup(lab, r0, r1);
   } else {
     // Not a SUP - apply it and continue with remaining args
-    Term applied = term_app(template, head);
+    Term applied = term_new_app(template, head);
     return collapse_inject(applied, args + 1, n_args - 1);
   }
 }
