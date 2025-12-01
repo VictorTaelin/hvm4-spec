@@ -238,6 +238,7 @@ typedef struct {
 // Tags
 // ====
 
+// inside term/_.c
 #define REF  0
 #define ALO  1
 #define ERA  2
@@ -271,22 +272,26 @@ typedef struct {
 // Special constructor names for stuck terms
 // =========================================
 
+// inside term/_.c
 #define _VAR_ 198380  // name_to_int("VAR")
 #define _APP_ 113322  // name_to_int("APP")
 
 // Bit Layout
 // ==========
 
+// inside term/_.c
 #define SUB_BITS 1
 #define TAG_BITS 7
 #define EXT_BITS 24
 #define VAL_BITS 32
 
+// inside term/_.c
 #define SUB_SHIFT 63
 #define TAG_SHIFT 56
 #define EXT_SHIFT 32
 #define VAL_SHIFT 0
 
+// inside term/_.c
 #define SUB_MASK 0x1
 #define TAG_MASK 0x7F
 #define EXT_MASK 0xFFFFFF
@@ -295,31 +300,49 @@ typedef struct {
 // Capacities
 // ==========
 
+// inside book/_.c
 #define BOOK_CAP  (1ULL << 24)
+
+// inside heap/_.c
 #define HEAP_CAP  (1ULL << 32)
+
+// inside wnf/_.c, rename to WNF_CAP
 #define STACK_CAP (1ULL << 32)
 
 // Globals
 // =======
 
+// inside book/_.c
 static u32  *BOOK;
+
+// inside heap/_.c
 static Term *HEAP;
+
+// inside stack/_.c
 static Term *STACK;
 
+// inside stack/_.c
 static u32 S_POS = 1;
+
+// inside heap/_.c
 static u64 ALLOC = 1;
+
+// inside wnf/_.c
 static u64 ITRS  = 0;
 
+// inside wnf/_.c
 static int DEBUG = 0;
 
 // System Helpers
 // ==============
 
+// sys_error → sys/error.c
 fn void error(const char *msg) {
   fprintf(stderr, "ERROR: %s\n", msg);
   exit(1);
 }
 
+// sys_path_join → sys/path_join.c
 fn void path_join(char *out, int size, const char *base, const char *rel) {
   if (rel[0] == '/') {
     snprintf(out, size, "%s", rel);
@@ -333,6 +356,7 @@ fn void path_join(char *out, int size, const char *base, const char *rel) {
   }
 }
 
+// sys_file_read → sys/file_read.c
 fn char *file_read(const char *path) {
   FILE *fp = fopen(path, "rb");
   if (!fp) {
@@ -354,6 +378,7 @@ fn char *file_read(const char *path) {
 // Term Helpers
 // ============
 
+// term_new → term/new.c
 fn Term new_term(u8 sub, u8 tag, u32 ext, u32 val) {
   return ((u64)sub << SUB_SHIFT)
        | ((u64)(tag & TAG_MASK) << TAG_SHIFT)
@@ -361,22 +386,27 @@ fn Term new_term(u8 sub, u8 tag, u32 ext, u32 val) {
        | ((u64)(val & VAL_MASK));
 }
 
+// term_sub → term/sub.c
 fn u8 sub_of(Term t) {
   return (t >> SUB_SHIFT) & SUB_MASK;
 }
 
+// term_tag → term/tag.c
 fn u8 tag(Term t) {
   return (t >> TAG_SHIFT) & TAG_MASK;
 }
 
+// term_ext → term/ext.c
 fn u32 ext(Term t) {
   return (t >> EXT_SHIFT) & EXT_MASK;
 }
 
+// term_val → term/val.c
 fn u32 val(Term t) {
   return (t >> VAL_SHIFT) & VAL_MASK;
 }
 
+// term_arity → term/arity.c
 fn u32 arity_of(Term t) {
   switch (tag(t)) {
     case LAM: {
@@ -400,14 +430,17 @@ fn u32 arity_of(Term t) {
   }
 }
 
+// term_mark_sub → term/mark_sub.c
 fn Term mark_sub(Term t) {
   return t | ((u64)1 << SUB_SHIFT);
 }
 
+// term_clear_sub → term/clear_sub.c
 fn Term clear_sub(Term t) {
   return t & ~(((u64)SUB_MASK) << SUB_SHIFT);
 }
 
+// heap_alloc → heap/alloc.c
 fn u64 heap_alloc(u64 size) {
 //  if (ALLOC + size >= HEAP_CAP) {
 //    error("HEAP_OVERFLOW\n");
@@ -420,8 +453,10 @@ fn u64 heap_alloc(u64 size) {
 // Names
 // =====
 
+// letter_alphabet → letter/alphabet.c
 static const char *alphabet = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$";
 
+// letter_to_b64 → letter/to_b64.c
 fn int char_to_b64(char c) {
   if (c == '_') {
     return 0;
@@ -441,10 +476,12 @@ fn int char_to_b64(char c) {
   return -1;
 }
 
+// letter_is_name_init → letter/is_name_char.c
 fn int is_name_start(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
+// letter_is_name_char → letter/is_name_char.c
 fn int is_name_char(char c) {
   return char_to_b64(c) >= 0;
 }
@@ -452,6 +489,7 @@ fn int is_name_char(char c) {
 // Term Constructors
 // =================
 
+// term_make_at → term/make_at.c
 fn Term NewAt(u32 loc, u8 tag, u32 ext, u32 ari, Term *args) {
   for (u32 i = 0; i < ari; i++) {
     HEAP[loc + i] = args[i];
@@ -459,18 +497,22 @@ fn Term NewAt(u32 loc, u8 tag, u32 ext, u32 ari, Term *args) {
   return new_term(0, tag, ext, loc);
 }
 
+// term_make → term/make.c 
 fn Term New(u8 tag, u32 ext, u32 ari, Term *args) {
   return NewAt(heap_alloc(ari), tag, ext, ari, args);
 }
 
+// term_var → term/var.c
 fn Term Var(u32 loc) {
   return new_term(0, VAR, 0, loc);
 }
 
+// term_ref → term/ref.c
 fn Term Ref(u32 nam) {
   return new_term(0, REF, nam, 0);
 }
 
+// ...
 fn Term Era(void) {
   return new_term(0, ERA, 0, 0);
 }
@@ -491,10 +533,12 @@ fn Term Lam(Term bod) {
   return LamAt(heap_alloc(1), bod);
 }
 
+// term_app_at → term/app_at.c
 fn Term AppAt(u32 loc, Term fun, Term arg) {
   return NewAt(loc, APP, 0, 2, (Term[]){fun, arg});
 }
 
+// term_app → 
 fn Term App(Term fun, Term arg) {
   return AppAt(heap_alloc(2), fun, arg);
 }
@@ -538,10 +582,12 @@ fn Term Num(u32 n) {
 // Cloning
 // =======
 
+// term_clone_at → term/clone_at.c
 fn Copy clone_at(u32 loc, u32 lab) {
   return (Copy){ Co0(lab, loc), Co1(lab, loc) };
 }
 
+// ...
 fn Copy clone(u32 lab, Term val) {
   u64 loc   = heap_alloc(1);
   HEAP[loc] = val;
@@ -559,10 +605,12 @@ fn void clone_many(u32 lab, Term *src, u32 n, Term *dst0, Term *dst1) {
 // Substitution Helpers
 // --------------------
 
+// heap_subst_var → heap/subst_var.c
 fn void subst_var(u32 loc, Term val) {
   HEAP[loc] = mark_sub(val);
 }
 
+// heap/subst_cop → heap/subst_cop.c
 fn Term subst_cop(u8 side, u32 loc, Term r0, Term r1) {
   HEAP[loc] = mark_sub(side == 0 ? r1 : r0);
   return side == 0 ? r0 : r1;
@@ -575,14 +623,17 @@ fn Term subst_cop(u8 side, u32 loc, Term r0, Term r1) {
 // - STR_LOG: print to stdout
 // - STR_BUF: write to TERM_BUF
 
+// inside print/_.c
 #define STR_LOG 0
 #define STR_BUF 1
 
+// inside print/_.c
 static u8    STR_MODE    = STR_LOG;
 static char *TERM_BUF    = NULL;
 static u32   TERM_BUF_POS = 0;
 static u32   TERM_BUF_CAP = 0;
 
+// print_str_putc → print/str_putc.c
 fn void str_putc(char c) {
   if (STR_MODE == STR_LOG) {
     putchar(c);
@@ -596,12 +647,14 @@ fn void str_putc(char c) {
   }
 }
 
+// print_str_puts → print/str_puts.c
 fn void str_puts(const char *s) {
   while (*s) {
     str_putc(*s++);
   }
 }
 
+// print_str_name → print/str_name.c
 fn void str_name(u32 n) {
   if (n < 64) {
     str_putc(alphabet[n]);
@@ -611,6 +664,7 @@ fn void str_name(u32 n) {
   }
 }
 
+// ...
 fn void str_uint(u32 n) {
   char buf[32];
   int  len = 0;
@@ -659,6 +713,7 @@ fn void str_app(Term term, u32 depth) {
   str_putc(')');
 }
 
+// print_str_term_go
 fn void str_term_go(Term term, u32 depth) {
   switch (tag(term)) {
     case VAR: {
@@ -765,6 +820,7 @@ fn void str_term_go(Term term, u32 depth) {
   }
 }
 
+// print_term → print/term.c
 fn void print_term(Term term) {
   STR_MODE = STR_LOG;
   str_term_go(term, 0);
@@ -793,6 +849,7 @@ fn char *term_to_str(Term term) {
 // Parser
 // ======
 
+// inside parse/_.c
 typedef struct {
   char *file;
   char *src;
@@ -813,6 +870,7 @@ static u32    PARSE_SEEN_FILES_LEN = 0;
 static PBind  PARSE_BINDS[16384];
 static u32    PARSE_BINDS_LEN = 0;
 
+// parse_error → parse/error.c
 fn void parse_error(PState *s, const char *expected, char detected) {
   fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m (%s:%d:%d)\n", s->file, s->line, s->col);
   fprintf(stderr, "- expected: %s\n", expected);
@@ -824,19 +882,23 @@ fn void parse_error(PState *s, const char *expected, char detected) {
   exit(1);
 }
 
+// parse_at_end → parse/at_end.c
 fn int at_end(PState *s) {
   return s->pos >= s->len;
 }
 
+// parse_peek_at → parse/peek_at.c
 fn char peek_at(PState *s, u32 offset) {
   u32 idx = s->pos + offset;
   return (idx >= s->len) ? 0 : s->src[idx];
 }
 
+// parse_peek → parse/peek.c
 fn char peek(PState *s) {
   return peek_at(s, 0);
 }
 
+// parse_advance → parse/advance.c
 fn void advance(PState *s) {
   if (at_end(s)) {
     return;
@@ -850,6 +912,7 @@ fn void advance(PState *s) {
   s->pos++;
 }
 
+// parse_starts_with → parse/starts_with.c
 fn int starts_with(PState *s, const char *str) {
   u32 i = 0;
   while (str[i]) {
@@ -861,6 +924,7 @@ fn int starts_with(PState *s, const char *str) {
   return 1;
 }
 
+// ...
 fn int match(PState *s, const char *str) {
   if (!starts_with(s, str)) {
     return 0;
@@ -924,6 +988,7 @@ fn void bind_lookup(u32 name, u32 depth, int *idx, u32 *lab) {
   *lab = 0;
 }
 
+// parse_name → parse/name.c
 fn u32 parse_name(PState *s) {
   skip(s);
   char c = peek(s);
@@ -943,6 +1008,7 @@ fn u32 parse_name(PState *s) {
 fn Term parse_term(PState *s, u32 depth);
 fn void parse_def(PState *s);
 
+// parse_mat_body → parse/mat_body.c
 fn Term parse_mat_body(PState *s, u32 depth) {
   skip(s);
   if (peek(s) == '}') {
@@ -981,6 +1047,7 @@ fn Term parse_lam(PState *s, u32 depth) {
   return new_term(0, LAM, depth, loc);
 }
 
+// parse_dup → parse/dup.c
 fn Term parse_dup(PState *s, u32 depth) {
   skip(s);
   u32 nam = parse_name(s);
@@ -1202,15 +1269,18 @@ fn void parse_def(PState *s) {
 // Beta Interactions
 // =================
 
+// wnf_app_era → wnf/app_era.c
 fn Term app_era(void) {
   ITRS++;
   return Era();
 }
 
+// wnf_app_ctr → wnf/app_ctr.c
 fn Term app_ctr(Term ctr, Term arg) {
   return Ctr(_APP_, 2, (Term[]){ctr, arg});
 }
 
+// ...
 fn Term app_lam(Term lam, Term arg) {
   ITRS++;
   u32  loc  = val(lam);
@@ -1321,6 +1391,7 @@ fn Term dup_node(u32 lab, u32 loc, u8 side, Term term) {
 // Alloc Helpers
 // =============
 
+// wnf_alo_bind_at → wnf/alo/bind_at.c
 fn u32 bind_at(u32 ls, u32 idx) {
   for (u32 i = 0; i < idx && ls != 0; i++) {
     ls = (u32)(HEAP[ls] & 0xFFFFFFFF);
@@ -1328,12 +1399,14 @@ fn u32 bind_at(u32 ls, u32 idx) {
   return (ls != 0) ? (u32)(HEAP[ls] >> 32) : 0;
 }
 
+// wnf_alo_make_bind → wnf/alo/make_bind.c
 fn u32 make_bind(u32 tail, u32 loc) {
   u64 entry = heap_alloc(1);
   HEAP[entry] = ((u64)loc << 32) | tail;
   return (u32)entry;
 }
 
+// wnf_alo_make → wnf/alo/make.c
 fn Term make_alo(u32 ls_loc, u32 tm_loc) {
   u64 loc   = heap_alloc(1);
   HEAP[loc] = ((u64)ls_loc << 32) | tm_loc;
@@ -1343,17 +1416,20 @@ fn Term make_alo(u32 ls_loc, u32 tm_loc) {
 // Alloc Interactions
 // ==================
 
+// wnf_alo_var → wnf/alo_var.c
 fn Term alo_var(u32 ls_loc, u32 idx) {
   u32 bind = bind_at(ls_loc, idx);
   return bind ? Var(bind) : new_term(0, VAR, 0, idx);
 }
 
+// wnf_alo_cop → wnf/alo_cop.c
 fn Term alo_cop(u32 ls_loc, u32 idx, u32 lab, u8 side) {
   u32 bind = bind_at(ls_loc, idx);
   u8  tag  = side == 0 ? CO0 : CO1;
   return bind ? new_term(0, tag, lab, bind) : new_term(0, tag, lab, idx);
 }
 
+// ...
 fn Term alo_lam(u32 ls_loc, u32 book_body_loc) {
   u64 lam_body  = heap_alloc(1);
   u32 new_bind  = make_bind(ls_loc, (u32)lam_body);
@@ -1379,6 +1455,7 @@ fn Term alo_node(u32 ls_loc, u32 loc, u8 tag, u32 ext, u32 ari) {
 // WNF
 // ===
 
+// inside wnf/_.c
 fn Term wnf(Term term) {
   S_POS = 0;
   Term next = term;
@@ -1622,6 +1699,7 @@ fn Term wnf(Term term) {
 // SNF
 // ===
 
+// snf/_.c
 fn Term snf(Term term, u32 depth) {
   term = wnf(term);
   u32 ari = arity_of(term);
@@ -1660,7 +1738,10 @@ fn Term snf(Term term, u32 depth) {
 // distributing the SUP to create two branches.
 
 // Forward declarations
+// inside collapse/_.c
 fn Term collapse(Term term);
+
+// collapse_inject → collapse/inject.c
 fn Term inject(Term template, Term *args, u32 n_args);
 
 // inject: Apply a list of collapsed arguments to a template.
@@ -1698,6 +1779,7 @@ fn Term inject(Term template, Term *args, u32 n_args) {
   }
 }
 
+// inside collapse/_.c
 // collapse: Bring all SUPs to the top level
 fn Term collapse(Term term) {
   term = wnf(term);
