@@ -113,20 +113,6 @@ static int   DEBUG = 0;
 
 static const char *nick_alphabet = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$";
 
-// Stringifier Modes
-// =================
-
-#define STR_LOG 0
-#define STR_BUF 1
-
-// Stringifier Globals
-// ===================
-
-static u8    STR_MODE     = STR_LOG;
-static char *TERM_BUF     = NULL;
-static u32   TERM_BUF_POS = 0;
-static u32   TERM_BUF_CAP = 0;
-
 // Parser Types
 // ============
 
@@ -210,16 +196,8 @@ static u32    PARSE_BINDS_LEN = 0;
 // Print
 // =====
 
-#include "print/str_putc.c"
-#include "print/str_puts.c"
-#include "print/str_name.c"
-#include "print/str_uint.c"
-#include "print/is_app.c"
-#include "print/str_term_go.c"
+#include "print/name.c"
 #include "print/term.c"
-#include "print/term_buf_init.c"
-#include "print/term_buf_free.c"
-#include "print/term_to_str.c"
 
 // Parse
 // =====
