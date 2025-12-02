@@ -146,6 +146,8 @@ typedef struct {
   u32 name;
   u32 depth;
   u32 lab;
+  u32 cloned;  // 1 if this is a cloned variable (λ&x or ! &x = v)
+  u32 uses;    // Number of times this variable is used
 } PBind;
 
 // Parser Globals
@@ -206,6 +208,8 @@ static u32    PARSE_FRESH_LAB = 0;
 // ====
 
 #include "nick/letter_to_b64.c"
+#include "nick/b64_to_letter.c"
+#include "nick/to_str.c"
 #include "nick/is_init.c"
 #include "nick/is_char.c"
 #include "nick/names.c"
@@ -248,6 +252,7 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "parse/bind_push.c"
 #include "parse/bind_pop.c"
 #include "parse/bind_lookup.c"
+#include "parse/auto_dup.c"
 #include "parse/name.c"
 #include "parse/utf8.c"
 #include "parse/term/lam.c"

@@ -91,11 +91,25 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       return term;
     }
   }
+  // Check for cloned variable: λ&x.body
+  u32 cloned = parse_match(s, "&");
   u32 nam = parse_name(s);
   parse_consume(s, ".");
-  parse_bind_push(nam, depth, 0);
+  parse_bind_push(nam, depth, 0, cloned);
   u64  loc  = heap_alloc(1);
   Term body = parse_term(s, depth + 1);
+  u32  uses = parse_bind_get_uses();
+  // Check for affinity violation on non-cloned variables
+  if (!cloned && uses > 1) {
+    fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m\n");
+    fprintf(stderr, "- variable used %d times (not cloned)\n", uses);
+    fprintf(stderr, "- hint: use λ& to allow multiple uses\n");
+    exit(1);
+  }
+  // Apply auto-dup transformation for cloned variables with multiple uses
+  if (cloned && uses > 1) {
+    body = parse_auto_dup(body, 0, uses);
+  }
   HEAP[loc] = body;
   parse_bind_pop();
   return term_new(0, LAM, depth, loc);

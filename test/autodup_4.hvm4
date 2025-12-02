@@ -1,0 +1,4 @@
+// 4 uses: 3 dups inserted
+@f = λ&x. [x,x,x,x]
+@main = @f(7)
+//[7,7,7,7]

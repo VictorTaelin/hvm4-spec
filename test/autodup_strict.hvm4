@@ -1,0 +1,3 @@
+// Auto-dup with strict let: !! &x = val
+@main = !! &x = @add(1,2); [x,x]
+//[3,3]

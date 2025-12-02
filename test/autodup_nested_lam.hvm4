@@ -1,0 +1,4 @@
+// Nested cloned lambdas
+@f = λ&x. λ&y. [[x,x], [y,y]]
+@main = @f(1)(2)
+//[[1,1],[2,2]]

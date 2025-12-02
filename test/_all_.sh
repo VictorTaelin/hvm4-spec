@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# Test runner for HVM4
+#
+# Test format:
+#   @main = <expression>
+#   //<expected output>
+#
+# For multi-line expected output, use multiple // lines.
+# Tests starting with _ are skipped.
+
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -87,11 +96,10 @@ run_tests() {
     keep=$((total - nlines))
     head -n "$keep" "$test_file" > "$tmp"
 
-    # Tests starting with "collapse_" or "enum_" need -C flag
-    flags=""
+    # Determine flags: all tests use -C by default
+    flags="-C"
     case "$name" in
       collapse_* | enum_* )
-        flags="-C"
         [ -n "$collapse_count" ] && flags="${flags}${collapse_count}"
         ;;
     esac

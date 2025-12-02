@@ -1,0 +1,4 @@
+// 2 uses: 1 dup inserted
+@f = λ&x. [x,x]
+@main = @f(5)
+//[5,5]

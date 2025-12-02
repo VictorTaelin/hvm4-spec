@@ -1,0 +1,4 @@
+// Cloned inner var with outer var reference
+@f = λ&x. λ&y. [x,y,y]
+@main = @f(1)(2)
+//[1,2,2]

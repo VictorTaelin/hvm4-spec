@@ -1,7 +1,8 @@
 // Let sugar: !x = val; body  →  (λx.body)(val)
 // Strict let: !!x = val; body  →  (λ{λx.body(x)})(val)
-@lazy = !x = @add(1,2); @mul(x,x)
-@strict = !!x = @add(1,2); @mul(x,x)
+// Cloned let: ! &x = val allows multiple uses of x
+@lazy = ! &x = @add(1,2); @mul(x,x)
+@strict = !! &x = @add(1,2); @mul(x,x)
 @nested = !a = 1; !b = 2; !c = 3; @add(a,@add(b,c))
 @main = [@lazy, @strict, @nested]
 //[9,9,6]

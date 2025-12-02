@@ -1,0 +1,4 @@
+// Mix of cloned and non-cloned variables
+@f = λ&x. λy. [x,x,y]
+@main = @f(1)(2)
+//[1,1,2]

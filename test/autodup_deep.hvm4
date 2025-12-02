@@ -1,0 +1,4 @@
+// Deeply nested cloned lambdas
+@f = λ&a. λ&b. λ&c. [a,a,b,b,c,c]
+@main = @f(1)(2)(3)
+//[1,1,2,2,3,3]

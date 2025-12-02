@@ -1,5 +1,5 @@
 // Chained SWI and MAT with defaults
-@swi = λ{0:10; 1:20; 2:30; λx.@mul(x,x)}
+@swi = λ{0:10; 1:20; 2:30; λ&x.@mul(x,x)}
 @mat = λ{#A:1; #B:λx.x; #C:λx.λy.@add(x,y); λz.0}
 @main = [
   @swi(0),
