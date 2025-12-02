@@ -24,22 +24,24 @@ typedef struct {
 // =========================
 
 #define fn static inline
+//#define fn_noinline static __attribute__((noinline))
 
 // Tags
 // ====
+// Hot tags first (0-7): APP, VAR, LAM, CO0, CO1, SUP, DUP, ALO
 
-#define NAM  0
-#define DRY  1
-#define REF  2
-#define ALO  3
-#define ERA  4
-#define CO0  5
-#define CO1  6
-#define VAR  7
-#define LAM  8
-#define APP  9
-#define SUP 10
-#define DUP 11
+#define APP  0
+#define VAR  1
+#define LAM  2
+#define CO0  3
+#define CO1  4
+#define SUP  5
+#define DUP  6
+#define ALO  7
+#define REF  8
+#define NAM  9
+#define DRY 10
+#define ERA 11
 #define MAT 12
 #define C00 13
 #define C01 14
