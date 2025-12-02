@@ -73,6 +73,12 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         parse_consume(s, "}");
         return term;
       }
+      // Allow _: prefix for default case
+      if (parse_peek(s) == '_') {
+        parse_advance(s);
+        parse_skip(s);
+        parse_consume(s, ":");
+      }
       if (term == term_new_era()) {
         Term f = parse_term(s, depth);
         parse_skip(s);
@@ -80,6 +86,7 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         return term_new_use(f);
       }
       *tip = parse_term(s, depth);
+      parse_skip(s);
       parse_consume(s, "}");
       return term;
     }
