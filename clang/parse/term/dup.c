@@ -2,6 +2,19 @@ fn Term parse_term(PState *s, u32 depth);
 
 fn Term parse_term_dup(PState *s, u32 depth) {
   parse_skip(s);
+  if (parse_peek(s) == '&') {
+    parse_consume(s, "&");
+    parse_consume(s, "(");
+    Term lab = parse_term(s, depth);
+    parse_consume(s, ")");
+    parse_consume(s, "=");
+    Term val = parse_term(s, depth);
+    parse_skip(s);
+    parse_match(s, ";");
+    parse_skip(s);
+    Term body = parse_term(s, depth);
+    return term_new_app(term_new_app(term_new_app(term_new_ref(table_find("dup", 3)), lab), val), body);
+  }
   // Check for !!x = val; body  →  (λ{λx.body(x)})(val)
   int strict = parse_match(s, "!");
   u32 nam = parse_name(s);
