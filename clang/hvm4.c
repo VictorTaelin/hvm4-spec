@@ -208,6 +208,11 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "nick/is_init.c"
 #include "nick/is_char.c"
 
+// Sugar
+// =====
+
+#include "sugar.c"
+
 // System
 // ======
 
@@ -246,6 +251,10 @@ static u32    PARSE_BINDS_LEN = 0;
 #include "parse/term/ref.c"
 #include "parse/term/par.c"
 #include "parse/term/num.c"
+#include "parse/term/nat.c"
+#include "parse/term/chr.c"
+#include "parse/term/str.c"
+#include "parse/term/lst.c"
 #include "parse/term/var.c"
 #include "parse/term/args.c"
 #include "parse/term/app.c"

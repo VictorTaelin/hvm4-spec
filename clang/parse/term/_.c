@@ -15,8 +15,15 @@ fn Term parse_term(PState *s, u32 depth) {
     t = parse_term_ref(s);
   } else if (parse_match(s, "(")) {
     t = parse_term_par(s, depth);
+  } else if (parse_peek(s) == '[') {
+    t = parse_term_lst(s, depth);
+  } else if (parse_peek(s) == '\'') {
+    t = parse_term_chr(s);
+  } else if (parse_peek(s) == '"') {
+    t = parse_term_str(s, depth);
   } else if (isdigit(parse_peek(s))) {
-    t = parse_term_num(s);
+    t = parse_term_nat(s, depth);
+    if (!t) t = parse_term_num(s);
   } else {
     t = parse_term_var(s, depth);
   }

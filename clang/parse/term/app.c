@@ -2,6 +2,11 @@ fn Term parse_term(PState *s, u32 depth);
 
 fn Term parse_term_app(Term f, PState *s, u32 depth) {
   parse_skip(s);
+  if (parse_match(s, "<>")) {
+    Term t = parse_term(s, depth);
+    Term a[2] = {f, t};
+    return term_new_ctr(NAM_CON, 2, a);
+  }
   if (parse_peek(s) != '(') {
     return f;
   }
