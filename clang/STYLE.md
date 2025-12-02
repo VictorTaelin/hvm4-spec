@@ -111,23 +111,3 @@ Do:
 foo[x+0] = 123;
 foo[x+1] = 456;
 ```
-
-## Separate sessions with markdown-inspired headers.
-
-Don't:
-```c
----------------------------------
-File Session
----------------------------------
-```
-
-Do:
-```c
-// File Session
-// ============
-
-// File Sub-Session
-// ----------------
-
-// ### File Sub-Sub-Session
-```
