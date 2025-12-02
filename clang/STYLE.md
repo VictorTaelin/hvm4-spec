@@ -2,6 +2,47 @@
 
 Abide to the guidelines below strictly!
 
+## File Organization: The Path is the Function Name
+
+Every function MUST live at a predictable path.
+- To find `foo_bar_baz()`, open `foo/bar/baz.c`.
+- To know what's in `foo/bar/baz.c`, look for `foo_bar_baz()`.
+No exceptions.
+
+The rule is: replace `/` with `_`, drop `.c`.
+
+```
+term/tag.c       →  term_tag()
+term/new/lam.c   →  term_new_lam()
+prim/add.c       →  prim_add()
+wnf/app_lam.c    →  wnf_app_lam()
+```
+
+The `_.c` file represents the directory itself (the "main" function for that path):
+
+```
+snf/_.c          →  snf()
+collapse/_.c     →  collapse()
+parse/term/_.c   →  parse_term()
+```
+
+Use a directory when a function has sub-functions; use a file when it doesn't:
+
+```
+term/tag.c                  # no children → file
+term/new/_.c + lam.c + ...  # has children → directory
+```
+
+A file may include helper variants, but the primary function must match the filename:
+
+```c
+// term/new/lam.c
+fn Term term_new_lam_at(...) { ... }  // helper variant
+fn Term term_new_lam(...) { ... }     // primary (matches filename)
+```
+
+The filesystem is the index. Do NOT break this pattern.
+
 ## NEVER write single-line ifs, loops, statements, functions.
 
 Don't:
