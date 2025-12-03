@@ -1,0 +1,14 @@
+// Tests lazy enumeration of infinite structures
+// The stream @X = &L{#Z, #S{@X}} enumerates as #Z, #S{#Z}, #S{#S{#Z}}, ...
+@X = &L{#Z, #S{@X}}
+@main = @X
+//#Z{}
+//#S{#Z{}}
+//#S{#S{#Z{}}}
+//#S{#S{#S{#Z{}}}}
+//#S{#S{#S{#S{#Z{}}}}}
+//#S{#S{#S{#S{#S{#Z{}}}}}}
+//#S{#S{#S{#S{#S{#S{#Z{}}}}}}}
+//#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}
+//#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}
+//#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}

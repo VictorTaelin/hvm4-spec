@@ -14,10 +14,11 @@
 // Flatten
 // =======
 //
-// Extracts all non-SUP leaves from a term via BFS traversal.
+// Lazy collapse + extraction via BFS traversal.
+// Integrates collapse_step to handle infinite structures without stack overflow.
 
 fn void flatten(Term term, int limit) {
-  // Simple BFS queue
+  // BFS queue
   Term *queue = malloc(sizeof(Term) * 1024 * 1024);
   int   head  = 0;
   int   tail  = 0;
@@ -28,16 +29,23 @@ fn void flatten(Term term, int limit) {
   while (head < tail && (limit < 0 || count < limit)) {
     Term t = queue[head++];
 
+    // Lazy collapse: lift SUPs one step at a time
+    t = collapse_step(t);
+
     if (term_tag(t) == SUP) {
+      // SUP at top - enqueue both branches for later processing
       u32 loc = term_val(t);
       queue[tail++] = HEAP[loc + 0];
       queue[tail++] = HEAP[loc + 1];
+    } else if (term_tag(t) == ERA) {
+      // Skip erasures
+      continue;
     } else {
-      if (term_tag(t) != ERA) {
-        print_term(t);
-        printf("\n");
-        count++;
-      }
+      // Non-SUP result - normalize and print
+      t = snf(t, 0);
+      print_term(t);
+      printf("\n");
+      count++;
     }
   }
 
@@ -163,22 +171,18 @@ int main(int argc, char **argv) {
   clock_gettime(CLOCK_MONOTONIC, &start);
 
   Term main_ref = term_new_ref(main_id);
-  Term result;
-  if (opts.do_collapse) {
-    result = snf(collapse(main_ref), 0);
-  } else {
-    result = snf(main_ref, 0);
-  }
 
-  clock_gettime(CLOCK_MONOTONIC, &end);
-
-  // Print result
   if (opts.do_collapse) {
-    flatten(result, opts.collapse_limit);
+    // Lazy collapse + flatten: handles infinite structures
+    flatten(main_ref, opts.collapse_limit);
   } else {
+    // Standard evaluation to strong normal form
+    Term result = snf(main_ref, 0);
     print_term(result);
     printf("\n");
   }
+
+  clock_gettime(CLOCK_MONOTONIC, &end);
 
   // Print stats if requested
   if (opts.stats) {

@@ -355,4 +355,5 @@ static u32    PARSE_FRESH_LAB = 0;
 // ========
 
 #include "collapse/inject.c"
+#include "collapse/step.c"
 #include "collapse/_.c"
