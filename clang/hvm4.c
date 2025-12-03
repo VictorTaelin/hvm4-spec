@@ -64,12 +64,12 @@ typedef struct {
 #define SWI 31
 #define USE 32
 #define OP2 33  // Op2(opr, x, y): strict on x, then y
-#define DYS 34  // DynSup(lab, a, b): strict on lab, creates SUP
-#define DYD 35  // DynDup(lab, val, bod): strict on lab, creates DUP
+#define DSU 34  // DynSup(lab, a, b): strict on lab, creates SUP
+#define DDU 35  // DynDup(lab, val, bod): strict on lab, creates DUP
 #define RED 36  // Red(f, g): guarded reduction, f ~> g
 
 // Stack frame tags (0x40+) - internal to WNF, encode reduction state
-// Note: regular term tags (APP, MAT, SWI, USE, CO0, CO1, OP2, DYS, DYD) also used as frames
+// Note: regular term tags (APP, MAT, SWI, USE, CO0, CO1, OP2, DSU, DDU) also used as frames
 // These frames reuse existing heap nodes to avoid allocation
 #define F_APP_RED     0x40  // ((f ~> □) x): val=app_loc. RED at HEAP[app_loc], arg at HEAP[app_loc+1]
 #define F_RED_MAT     0x41  // ((f ~> mat) □): val=app_loc. After reducing g, mat stored at HEAP[red_loc+1]
@@ -231,8 +231,8 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "term/new/use.c"
 #include "term/new/ctr.c"
 #include "term/new/op2.c"
-#include "term/new/dys.c"
-#include "term/new/dyd.c"
+#include "term/new/dsu.c"
+#include "term/new/ddu.c"
 #include "term/new/red.c"
 #include "term/new/num.c"
 #include "term/clone.c"

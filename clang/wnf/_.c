@@ -97,8 +97,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case USE:
           case C00 ... C16:
           case OP2:
-          case DYS:
-          case DYD:
+          case DSU:
+          case DDU:
           case RED: {
             next = wnf_alo_node(ls_loc, term_val(book), term_tag(book), term_ext(book), term_arity(book));
             goto enter;
@@ -127,7 +127,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         goto enter;
       }
 
-      case DYS: {
+      case DSU: {
         u32  loc = term_val(next);
         Term lab = HEAP[loc + 0];
         STACK[S_POS++] = next;
@@ -135,7 +135,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         goto enter;
       }
 
-      case DYD: {
+      case DDU: {
         u32  loc = term_val(next);
         Term lab = HEAP[loc + 0];
         STACK[S_POS++] = next;
@@ -560,8 +560,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case SWI:
             case USE:
             case OP2:
-            case DYS:
-            case DYD:
+            case DSU:
+            case DDU:
             case C00 ... C16: {
               next = wnf_dup_node(lab, loc, side, whnf);
               goto enter;
@@ -644,9 +644,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
         }
 
         // -----------------------------------------------------------------------
-        // DYS frame: &(□){a,b} - we reduced lab, dispatch
+        // DSU frame: &(□){a,b} - we reduced lab, dispatch
         // -----------------------------------------------------------------------
-        case DYS: {
+        case DSU: {
           u32  loc = term_val(frame);
           Term a   = HEAP[loc + 1];
           Term b   = HEAP[loc + 2];
@@ -665,16 +665,16 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             default: {
-              whnf = term_new_dys(whnf, a, b);
+              whnf = term_new_dsu(whnf, a, b);
               continue;
             }
           }
         }
 
         // -----------------------------------------------------------------------
-        // DYD frame: ! x &(□) = val; bod - we reduced lab, dispatch
+        // DDU frame: ! x &(□) = val; bod - we reduced lab, dispatch
         // -----------------------------------------------------------------------
-        case DYD: {
+        case DDU: {
           u32  loc = term_val(frame);
           Term val = HEAP[loc + 1];
           Term bod = HEAP[loc + 2];
@@ -693,7 +693,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             default: {
-              whnf = term_new_dyd(whnf, val, bod);
+              whnf = term_new_ddu(whnf, val, bod);
               continue;
             }
           }

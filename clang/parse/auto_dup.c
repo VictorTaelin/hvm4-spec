@@ -57,8 +57,8 @@ fn void parse_auto_dup_go(u64 loc, u32 idx, u32 *use, u32 n, u32 lab) {
       ari = 2;
       break;
     }
-    case DYS:
-    case DYD: {
+    case DSU:
+    case DDU: {
       ari = 3;
       break;
     }
@@ -117,8 +117,8 @@ fn Term parse_auto_dup(Term body, u32 idx, u32 uses) {
       ari = 2;
       break;
     }
-    case DYS:
-    case DYD: {
+    case DSU:
+    case DDU: {
       ari = 3;
       break;
     }

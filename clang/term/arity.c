@@ -27,8 +27,8 @@ fn u32 term_arity(Term t) {
     case OP2: {
       return 2;
     }
-    case DYS:
-    case DYD: {
+    case DSU:
+    case DDU: {
       return 3;
     }
     default: {

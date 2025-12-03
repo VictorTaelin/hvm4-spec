@@ -1,9 +1,9 @@
 // DynDup(lab, val, bod): dynamic duplication, strict on lab
 // Layout: HEAP[loc+0] = lab, HEAP[loc+1] = val, HEAP[loc+2] = bod
-fn Term term_new_dyd(Term lab, Term val, Term bod) {
+fn Term term_new_ddu(Term lab, Term val, Term bod) {
   u32 loc = heap_alloc(3);
   HEAP[loc + 0] = lab;
   HEAP[loc + 1] = val;
   HEAP[loc + 2] = bod;
-  return term_new(0, DYD, 0, loc);
+  return term_new(0, DDU, 0, loc);
 }

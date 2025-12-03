@@ -81,7 +81,7 @@ fn Term parse_term_dup(PState *s, u32 depth) {
     Term lam1    = term_new(0, LAM, depth + 1, loc1);
     HEAP[loc0]   = lam1;
     Term lam0    = term_new(0, LAM, depth, loc0);
-    return term_new_dyd(lab_term, val, lam0);
+    return term_new_ddu(lab_term, val, lam0);
   }
   // Static label
   u32 lab;
