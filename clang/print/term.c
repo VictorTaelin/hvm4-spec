@@ -151,16 +151,16 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     case OP2: {
       u32 opr = term_ext(term);
       u32 loc = term_val(term);
-      static const char *op_names[] = {
-        "add", "sub", "mul", "div", "mod", "and", "or", "xor", "lsh", "rsh",
-        "not", "eq", "ne", "lt", "le", "gt", "ge"
+      static const char *op_syms[] = {
+        "+", "-", "*", "/", "%", "&&", "||", "^", "<<", ">>",
+        "~", "==", "!=", "<", "<=", ">", ">="
       };
-      fputs("@@", f);
-      if (opr < 17) fputs(op_names[opr], f);
-      else fprintf(f, "op%u", opr);
       fputc('(', f);
       print_term_go(f, HEAP[loc + 0], depth);
-      fputc(',', f);
+      fputc(' ', f);
+      if (opr < 17) fputs(op_syms[opr], f);
+      else fprintf(f, "?%u", opr);
+      fputc(' ', f);
       print_term_go(f, HEAP[loc + 1], depth);
       fputc(')', f);
       break;
@@ -168,16 +168,16 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     case OP1: {
       u32 opr = term_ext(term);
       u32 loc = term_val(term);
-      static const char *op_names[] = {
-        "add", "sub", "mul", "div", "mod", "and", "or", "xor", "lsh", "rsh",
-        "not", "eq", "ne", "lt", "le", "gt", "ge"
+      static const char *op_syms[] = {
+        "+", "-", "*", "/", "%", "&&", "||", "^", "<<", ">>",
+        "~", "==", "!=", "<", "<=", ">", ">="
       };
-      fputs("@@", f);
-      if (opr < 17) fputs(op_names[opr], f);
-      else fprintf(f, "op%u", opr);
-      fputs("'(", f);
+      fputc('(', f);
       print_term_go(f, HEAP[loc + 0], depth);
-      fputc(',', f);
+      fputc(' ', f);
+      if (opr < 17) fputs(op_syms[opr], f);
+      else fprintf(f, "?%u", opr);
+      fputs(". ", f);
       print_term_go(f, HEAP[loc + 1], depth);
       fputc(')', f);
       break;

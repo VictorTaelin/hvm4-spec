@@ -1,6 +1,6 @@
 // Default case with _: syntax
-@swi = λ{0:10; 1:20; _:λ&x.@@mul(x,x)}
+@swi = λ{0:10; 1:20; _:λ&x.x * x}
 @mat = λ{#A:1; #B:2; _:λx.0}
-@lst = λ{[]:0; <>:λh.λt.@@add(h,@lst(t)); _:0}
+@lst = λ{[]:0; <>:λh.λt.h + @lst(t); _:0}
 @main = [@swi(0), @swi(1), @swi(5), @mat(#A{}), @mat(#C{}), @lst([1,2,3])]
 //[10,20,25,1,0,6]

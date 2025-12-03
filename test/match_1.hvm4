@@ -1,6 +1,6 @@
 // Nat and List sugar patterns
-@len = λ{[]:0; <>:λh.λt.@@add(1,@len(t))}
-@sum = λ{0n:0; 1n+:λp.@@add(1,@sum(p))}
+@len = λ{[]:0; <>:λh.λt.1 + @len(t)}
+@sum = λ{0n:0; 1n+:λp.1 + @sum(p)}
 @main = [
   @len([]),
   @len([1,2,3]),

@@ -21,7 +21,7 @@ Term ::=
 | App ::= "(" Term " " Term ")"
 | Alo ::= "@" "{" [Name] "}" Term
 | Num ::= Integer
-| Op2 ::= "@@" Oper "(" Term "," Term ")"
+| Op2 ::= Term Oper Term
 | DSu ::= "&" "(" Term ")" "{" Term "," Term "}"
 | DDu ::= "!" Name "&" "(" Term ")" "=" Term ";" Term
 ```
@@ -29,7 +29,7 @@ Term ::=
 Where:
 - `Name ::= any sequence of base-64 chars in _ A-Z a-z 0-9 $`
 - `[T]  ::= any sequence of T separated by ","`
-- `Oper ::= add | sub | mul | div | mod | and | or | xor | lsh | rsh | not | eq | ne | lt | le | gt | ge`
+- `Oper ::= "+" | "-" | "*" | "/" | "%" | "&&" | "||" | "^" | "~" | "<<" | ">>" | "==" | "!=" | "<" | "<=" | ">" | ">="`
 
 In HVM4:
 - Variables are affine; they must occur at most once.
@@ -263,40 +263,44 @@ x' ← fresh
 Numeric Operation Interactions
 ------------------------------
 
-Numeric operations use a two-phase reduction. `@@opr(x, y)` is strict on `x`,
-and when `x` reduces to a number, it creates `@@opr'(x, y)` which is strict on `y`.
+Numeric operations use a two-phase reduction. `(x + y)` is strict on `x`,
+and when `x` reduces to a number, it creates `(#n +. y)` which is strict on `y`.
 When both arguments are numbers, the operation is performed.
 
 ```
-@@opr(&{}, y)
-------------- op2-era
+(&{} + y)
+---------- op2-era
 &{}
 
-@@opr(&L{a,b}, y)
-------------------------- op2-sup
+(&L{a,b} + y)
+---------------------- op2-sup
 ! Y &L = y
-&L{@@opr(a,Y₀), @@opr(b,Y₁)}
+&L{(a + Y₀), (b + Y₁)}
 
-@@opr(#n, y)
------------- op2-num
-@@opr'(#n, y)
+(#n + y)
+--------- op2-num
+(#n +. y)
 
-@@opr'(x, &{})
--------------- op1-era
+(x +. &{})
+---------- op1-era
 &{}
 
-@@opr'(x, &L{a,b})
-------------------------- op1-sup
+(x +. &L{a,b})
+--------------------- op1-sup
 ! X &L = x
-&L{@@opr'(X₀,a), @@opr'(X₁,b)}
+&L{(X₀ +. a), (X₁ +. b)}
 
-@@opr'(#a, #b)
--------------- op1-num
-#(a opr b)
+(#a +. #b)
+---------- op1-num
+#(a + b)
 ```
 
-Where `opr` is one of: add, sub, mul, div, mod, and, or, xor, lsh, rsh, eq, ne, lt, le, gt, ge.
-The `not` operation uses `@@not(0, x)` with result `~x`.
+Available operators:
+- Arithmetic: `+` `-` `*` `/` `%`
+- Bitwise: `&&` `||` `^` `~` `<<` `>>`
+- Comparison: `==` `!=` `<` `<=` `>` `>=`
+
+The `~` operator computes bitwise NOT: `(0 ~ x)` returns `~x`.
 
 Dynamic Superposition Interactions
 ----------------------------------

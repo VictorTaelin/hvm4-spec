@@ -1,4 +1,5 @@
 fn Term parse_term(PState *s, u32 depth);
+fn int parse_term_opr_match(PState *s);
 
 fn Term parse_term_app(Term f, PState *s, u32 depth) {
   parse_skip(s);
@@ -6,6 +7,12 @@ fn Term parse_term_app(Term f, PState *s, u32 depth) {
     Term t = parse_term(s, depth);
     Term a[2] = {f, t};
     return term_new_ctr(NAM_CON, 2, a);
+  }
+  // Try to parse infix operator: x + y -> Op2(OP_ADD, x, y)
+  int op = parse_term_opr_match(s);
+  if (op >= 0) {
+    Term t = parse_term(s, depth);
+    return parse_term_app(term_new_op2(op, f, t), s, depth);
   }
   if (parse_peek(s) != '(') {
     return f;
