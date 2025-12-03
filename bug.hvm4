@@ -1,0 +1,10 @@
+@lam = λ&L. λ{
+  #Fun: λB. λS.
+    ! B &(L) = B;
+    ! S &(L) = S;
+    &(L){λx. !x&=x; @lam(L,B₀,S₀(x₁)), &{}}
+  λT. λS. S
+}
+
+@type = #Fun{#Fun{#Boo}}
+@main = @lam(0, @type, ^F)
