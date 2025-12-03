@@ -24,7 +24,6 @@
 @two = #S{#S{#Z{}}}
 @four = #S{#S{#S{#S{#Z{}}}}}
 
-// solves x * 2 = 4
+// solves x + 2 = 4
 @main = @if(@eq(@add(@X, @two), @four), @X, &{})
-//1
 //#S{#S{#Z{}}}

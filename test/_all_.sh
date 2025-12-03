@@ -67,20 +67,10 @@ run_tests() {
       fi
     done < <(tail -r "$test_file" 2>/dev/null || tac "$test_file")
 
+    # For collapse_* and enum_* tests, infer limit from expected output lines
     collapse_count=""
     if [[ "$name" == collapse_* || "$name" == enum_* ]]; then
-      first_line="${expected%%$'\n'*}"
-      # trim leading/trailing whitespace
-      first_line="${first_line#"${first_line%%[![:space:]]*}"}"
-      first_line="${first_line%"${first_line##*[![:space:]]}"}"
-      if [[ "$first_line" =~ ^[0-9]+$ ]]; then
-        collapse_count="$first_line"
-        if [[ "$expected" == *$'\n'* ]]; then
-          expected="${expected#*$'\n'}"
-        else
-          expected=""
-        fi
-      fi
+      collapse_count="$nlines"
     fi
 
     if [ -z "$expected" ]; then

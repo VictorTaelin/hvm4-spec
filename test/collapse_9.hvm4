@@ -2,7 +2,6 @@
 // The stream @X = &L{#Z, #S{@X}} enumerates as #Z, #S{#Z}, #S{#S{#Z}}, ...
 @X = &L{#Z, #S{@X}}
 @main = @X
-//10
 //#Z{}
 //#S{#Z{}}
 //#S{#S{#Z{}}}
