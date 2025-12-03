@@ -50,25 +50,22 @@ fn Term parse_term_pri(PState *s, u32 depth) {
     }
   }
 
-  // Handle special prims (dup, sup)
-  if (nam == NAM_DUP || nam == NAM_SUP) {
-    if (nam == NAM_DUP) {
-      // @@dup(lab, val, fun) - dynamic dup
-      if (cnt != 3) {
-        fprintf(stderr, "@@dup expects 3 arguments\n");
-        exit(1);
-      }
-      fprintf(stderr, "@@dup should be parsed via ! x &(lab) = ... syntax\n");
-      exit(1);
-    } else {
-      // @@sup(lab, a, b) - dynamic sup
-      if (cnt != 3) {
-        fprintf(stderr, "@@sup expects 3 arguments\n");
-        exit(1);
-      }
-      fprintf(stderr, "@@sup should be parsed via &(lab){...} syntax\n");
+  // Handle @@sup(lab, a, b) -> DYS
+  if (nam == NAM_SUP) {
+    if (cnt != 3) {
+      fprintf(stderr, "@@sup expects 3 arguments\n");
       exit(1);
     }
+    return term_new_dys(args[0], args[1], args[2]);
+  }
+
+  // Handle @@dup(lab, val, fun) -> DYD
+  if (nam == NAM_DUP) {
+    if (cnt != 3) {
+      fprintf(stderr, "@@dup expects 3 arguments\n");
+      exit(1);
+    }
+    return term_new_dyd(args[0], args[1], args[2]);
   }
 
   fprintf(stderr, "unknown primitive: ");
