@@ -1,0 +1,5 @@
+// Test: dbl with RED using Scott numerals
+// Scott: ZER = #ZER{}  SUC n = #SUC{n}
+@dbl = ^dbl ~> λ{#ZER: #ZER{}; #SUC: λp.#SUC{#SUC{@dbl(p)}}}
+@main = @dbl(#SUC{#SUC{#SUC{#ZER{}}}})
+//6n

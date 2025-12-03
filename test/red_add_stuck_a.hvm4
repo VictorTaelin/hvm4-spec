@@ -1,0 +1,4 @@
+// Test: add with stuck first argument
+@add = ^add ~> λ{#ZER: λb.b; #SUC: λa.λb.#SUC{@add(a, b)}}
+@main = λx.@add(#SUC{#SUC{x}}, #SUC{#SUC{#ZER{}}})
+//λa.2n+add(a,2n)

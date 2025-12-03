@@ -1,0 +1,5 @@
+// Test: foo with sup inside RED using Scott numerals
+@foo = ^foo ~> &L{λx.x, λ{#ZER: #ZER{}; #SUC: λp.p}}
+@main = @foo(#ZER{})
+//0n
+//0n

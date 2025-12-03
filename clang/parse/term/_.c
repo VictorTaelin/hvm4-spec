@@ -11,6 +11,8 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     return parse_term_ctr(s, depth);
   } else if (parse_match(s, "@")) {
     return parse_term_ref(s);
+  } else if (parse_match(s, "^")) {
+    return parse_term_nam(s, depth);
   } else if (parse_match(s, "(")) {
     return parse_term_par(s, depth);
   } else if (parse_peek(s) == '[') {

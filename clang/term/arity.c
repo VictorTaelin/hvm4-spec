@@ -11,7 +11,8 @@ fn u32 term_arity(Term t) {
     case DUP:
     case MAT:
     case SWI:
-    case DRY: {
+    case DRY:
+    case RED: {
       return 2;
     }
     case USE: {
@@ -23,8 +24,7 @@ fn u32 term_arity(Term t) {
     case C00 ... C16: {
       return term_tag(t) - C00;
     }
-    case OP2:
-    case OP1: {
+    case OP2: {
       return 2;
     }
     case DYS:

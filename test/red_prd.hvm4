@@ -1,0 +1,4 @@
+// Test: predecessor with RED using Scott numerals
+@prd = ^prd ~> λ{#ZER: #ZER{}; #SUC: λp.p}
+@main = !f&DUP=@prd; f₀(f₁(#SUC{#SUC{#SUC{#SUC{#ZER{}}}}}))
+//2n

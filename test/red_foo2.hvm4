@@ -1,0 +1,5 @@
+// Test: foo with non-zero arg using Scott numerals
+@foo = ^foo ~> &L{λx.x, λ{#ZER: #ZER{}; #SUC: λp.p}}
+@main = @foo(#SUC{#SUC{#SUC{#ZER{}}}})
+//3n
+//2n

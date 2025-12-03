@@ -19,6 +19,12 @@ fn Term collapse(Term term) {
       return term_new_sup(term_ext(term), a, b);
     }
 
+    case RED: {
+      // For RED, collapse the rhs (g) side only
+      u64  loc = term_val(term);
+      return collapse(HEAP[loc + 1]);
+    }
+
     case LAM: {
       // Haskell: fV <- fresh; f' <- collapse f; inject (Lam fV (Lam k (Var fV))) [f']
       u64  lam_loc = term_val(term);

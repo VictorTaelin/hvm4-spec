@@ -1,0 +1,4 @@
+// Test: duplication of RED
+@id = ^id ~> λa.a
+@main = !F&L=@id; !G&L=F₀; λx.(G₁(x))
+//λa.a

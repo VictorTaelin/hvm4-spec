@@ -63,12 +63,21 @@ typedef struct {
 #define NUM 30
 #define SWI 31
 #define USE 32
-#define OP2 33  // Op2(opr, x, y): strict on x, then creates Op1
-#define OP1 34  // Op1(opr, x, y): strict on y, then performs operation
-#define DYS 35  // DynSup(lab, a, b): strict on lab, creates SUP
-#define DYD 36  // DynDup(lab, val, bod): strict on lab, creates DUP
+#define OP2 33  // Op2(opr, x, y): strict on x, then y
+#define DYS 34  // DynSup(lab, a, b): strict on lab, creates SUP
+#define DYD 35  // DynDup(lab, val, bod): strict on lab, creates DUP
+#define RED 36  // Red(f, g): guarded reduction, f ~> g
 
-// Operation codes (stored in EXT field of OP2/OP1)
+// Stack frame tags (0x40+) - internal to WNF, encode reduction state
+// Note: regular term tags (APP, MAT, SWI, USE, CO0, CO1, OP2, DYS, DYD) also used as frames
+// These frames reuse existing heap nodes to avoid allocation
+#define F_APP_RED     0x40  // ((f ~> □) x): val=app_loc. RED at HEAP[app_loc], arg at HEAP[app_loc+1]
+#define F_RED_MAT     0x41  // ((f ~> mat) □): val=app_loc. After reducing g, mat stored at HEAP[red_loc+1]
+#define F_RED_SWI     0x42  // ((f ~> swi) □): val=app_loc. After reducing g, swi stored at HEAP[red_loc+1]
+#define F_RED_USE     0x43  // ((f ~> use) □): val=app_loc. After reducing g, use stored at HEAP[red_loc+1]
+#define F_OP2_NUM     0x44  // (x op □): ext=opr, val=x_num_val
+
+// Operation codes (stored in EXT field of OP2)
 #define OP_ADD 0
 #define OP_SUB 1
 #define OP_MUL 2
@@ -222,9 +231,9 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "term/new/use.c"
 #include "term/new/ctr.c"
 #include "term/new/op2.c"
-#include "term/new/op1.c"
 #include "term/new/dys.c"
 #include "term/new/dyd.c"
+#include "term/new/red.c"
 #include "term/new/num.c"
 #include "term/clone.c"
 
@@ -290,6 +299,7 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "parse/term/sup.c"
 #include "parse/term/ctr.c"
 #include "parse/term/ref.c"
+#include "parse/term/nam.c"
 #include "parse/term/par.c"
 #include "parse/term/num.c"
 #include "parse/term/nat.c"
@@ -316,6 +326,7 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "wnf/app_mat_ctr.c"
 #include "wnf/dup_nam.c"
 #include "wnf/dup_dry.c"
+#include "wnf/dup_red.c"
 #include "wnf/dup_lam.c"
 #include "wnf/dup_sup.c"
 #include "wnf/dup_node.c"
@@ -327,11 +338,10 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "wnf/alo_dup.c"
 #include "wnf/alo_node.c"
 #include "wnf/op2_era.c"
-#include "wnf/op2_num.c"
 #include "wnf/op2_sup.c"
-#include "wnf/op1_era.c"
-#include "wnf/op1_num.c"
-#include "wnf/op1_sup.c"
+#include "wnf/op2_num_era.c"
+#include "wnf/op2_num_num.c"
+#include "wnf/op2_num_sup.c"
 #include "wnf/dsu_era.c"
 #include "wnf/dsu_num.c"
 #include "wnf/dsu_sup.c"
@@ -344,6 +354,7 @@ static u32    PARSE_FRESH_LAB = 0;
 #include "wnf/use_era.c"
 #include "wnf/use_sup.c"
 #include "wnf/use_val.c"
+#include "wnf/app_red.c"
 #include "wnf/_.c"
 
 // SNF

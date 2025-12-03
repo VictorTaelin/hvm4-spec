@@ -1,7 +1,7 @@
-// @@opr'(#a, #b)
-// -------------- op1-num
+// (#a op #b)
+// -------------- op2-num-num
 // #(a opr b)
-fn Term wnf_op1_num(u32 opr, Term x, Term y) {
+fn Term wnf_op2_num_num(u32 opr, Term x, Term y) {
   ITRS++;
   u32 a = term_val(x);
   u32 b = term_val(y);

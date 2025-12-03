@@ -1,0 +1,6 @@
+// Test: sum with stuck variable
+// sum(3+x) should partially evaluate: sum matches 3 times, accumulating adds
+@add = ^add ~> λ{#ZER: λb.b; #SUC: λa.λb.#SUC{@add(a, b)}}
+@sum = ^sum ~> λ{#ZER: #ZER{}; #SUC: λp.!P&S=p; #SUC{@add(P₀, @sum(P₁))}}
+@main = λx.@sum(#SUC{#SUC{#SUC{x}}})
+//λa.3n+add(a,2n+add(a,1n+add(a,sum(a))))

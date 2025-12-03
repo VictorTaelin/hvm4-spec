@@ -12,6 +12,10 @@ fn Term parse_term_app(Term f, PState *s, u32 depth) {
 
 fn Term parse_term_app_prec(Term f, PState *s, u32 depth, int min_prec) {
   parse_skip(s);
+  if (parse_match(s, "~>")) {
+    Term g = parse_term(s, depth);
+    return parse_term_app_prec(term_new_red(f, g), s, depth, min_prec);
+  }
   if (parse_match(s, "<>")) {
     Term t = parse_term(s, depth);
     Term a[2] = {f, t};

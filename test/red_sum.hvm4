@@ -1,0 +1,6 @@
+// Test: sum with RED using Scott numerals
+// sum(3) = 0+1+2+3 = 6
+@add = ^add ~> λ{#ZER: λb.b; #SUC: λa.λb.#SUC{@add(a, b)}}
+@sum = ^sum ~> λ{#ZER: #ZER{}; #SUC: λp.!P&S=p; #SUC{@add(P₀, @sum(P₁))}}
+@main = @sum(#SUC{#SUC{#SUC{#ZER{}}}})
+//6n

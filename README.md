@@ -24,6 +24,7 @@ Term ::=
 | Op2 ::= Term Oper Term
 | DSu ::= "&" "(" Term ")" "{" Term "," Term "}"
 | DDu ::= "!" Name "&" "(" Term ")" "=" Term ";" Term
+| Red ::= Term "~>" Term
 ```
 
 Where:
@@ -351,5 +352,108 @@ Reference Interaction
 ```
 @foo
 ---------------------- ref
-foo ~> @{}(book.foo)
+@{}(book.foo)
+```
+
+Reduction Interactions
+----------------------
+
+Reductions `f ~> g` represent a term `g` that is guarded by `f`. When applied,
+both sides receive the argument, but only `g` continues reducing. The `f` side
+tracks the "original" computation for reference semantics.
+
+```
+! X &L = f ~> g
+--------------- dup-red
+! F &L = f
+! G &L = g
+X₀ ← F₀ ~> G₀
+X₁ ← F₁ ~> G₁
+
+((f ~> &{}) a)
+-------------- app-red-era
+&{}
+
+((f ~> &L{x,y}) a)
+------------------ app-red-sup
+! F &L = f
+! A &L = a
+&L{((F₀ ~> x) A₀)
+  ,((F₁ ~> y) A₁)}
+
+((f ~> λx.g) a)
+--------------- app-red-lam
+x ← a
+(f a) ~> g
+
+((f ~> (g ~> h)) x)
+------------------- app-red-red
+((f x) ~> ((g ~> h) x))
+
+((f ~> λ{#K:h; m}) &{})
+----------------------- app-red-mat-era
+&{}
+
+((f ~> λ{#K:h; m}) &L{a,b})
+--------------------------- app-red-mat-sup
+! F &L = f
+! H &L = h
+! M &L = m
+&L{((F₀ ~> λ{#K:H₀; M₀}) a)
+  ,((F₁ ~> λ{#K:H₁; M₁}) b)}
+
+((f ~> λ{#K:h; m}) #K{a,b})
+--------------------------- app-red-mat-ctr-match
+((λa.λb.(f #K{a,b}) ~> h) a b)
+
+((f ~> λ{#K:h; m}) #L{a,b})
+--------------------------- app-red-mat-ctr-miss
+((f ~> m) #L{a,b})
+
+((f ~> λ{n:z;s}) &{})
+--------------------- app-red-swi-era
+&{}
+
+((f ~> λ{n:z;s}) &L{a,b})
+------------------------- app-red-swi-sup
+! F &L = f
+! Z &L = z
+! S &L = s
+&L{((F₀ ~> λ{n:Z₀;S₀}) a)
+  ,((F₁ ~> λ{n:Z₁;S₁}) b)}
+
+((f ~> λ{n:z;s}) #n)
+-------------------- app-red-swi-match
+(f #n) ~> z
+
+((f ~> λ{n:z;s}) #m)
+-------------------- app-red-swi-miss
+((λp.(f p) ~> s) #m)
+
+((f ~> λ{g}) &{})
+----------------- app-red-use-era
+&{}
+
+((f ~> λ{g}) &L{a,b})
+--------------------- app-red-use-sup
+! F &L = f
+! G &L = g
+&L{((F₀ ~> λ{G₀}) a)
+  ,((F₁ ~> λ{G₁}) b)}
+
+((f ~> λ{g}) x)
+--------------- app-red-use-val
+(f x) ~> (g x)
+
+((f ~> #K{...}) a)
+------------------ app-red-ctr
+^((f ~> #K{...}) a)
+
+((f ~> ^n) a)
+------------- app-red-nam
+^((f ~> ^n) a)
+
+((f ~> ^(g x)) a)
+----------------- app-red-dry
+^((f ~> ^(g x)) a)
 ```

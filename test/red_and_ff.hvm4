@@ -1,0 +1,4 @@
+// Test: and with RED (both false)
+@and = ^and ~> λ{#F: λb.#F{}; #T: λb.b}
+@main = @and(#F{}, #F{})
+//#F{}

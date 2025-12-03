@@ -1,0 +1,5 @@
+// Test: and with stuck first argument (Scott booleans)
+// #F{} = false, #T{} = true
+@and = ^and ~> λ{#F: λb.#F{}; #T: λb.b}
+@main = λx.@and(x, #T{})
+//λa.and(a,#T{})

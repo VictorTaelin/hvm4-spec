@@ -1,0 +1,4 @@
+// Test: basic RED identity function
+@id = ^id ~> λa.a
+@main = @id(42)
+//42

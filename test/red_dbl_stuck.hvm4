@@ -1,0 +1,4 @@
+// Test: dbl with stuck variable using Scott numerals
+@dbl = ^dbl ~> λ{#ZER: #ZER{}; #SUC: λp.#SUC{#SUC{@dbl(p)}}}
+@main = λx.@dbl(#SUC{#SUC{x}})
+//λa.4n+dbl(a)
