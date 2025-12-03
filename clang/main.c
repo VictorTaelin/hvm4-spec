@@ -14,8 +14,12 @@
 // Flatten
 // =======
 //
-// Lazy collapse + extraction via BFS traversal.
-// Integrates collapse_step to handle infinite structures without stack overflow.
+// BFS traversal that enumerates superposition branches.
+// Uses collapser to lift SUPs to the top, then walks the result.
+//
+// Architecture (mirrors KolmoC):
+// - collapser(term): lifts all SUPs to outermost level
+// - flatten: walks result, enqueueing SUP branches, printing leaves
 
 fn void flatten(Term term, int limit) {
   // BFS queue
@@ -29,8 +33,8 @@ fn void flatten(Term term, int limit) {
   while (head < tail && (limit < 0 || count < limit)) {
     Term t = queue[head++];
 
-    // Lazy collapse: lift SUPs one step at a time
-    t = collapse_step(t);
+    // Collapse: lift any SUPs in this term to the top
+    t = collapser(t);
 
     if (term_tag(t) == SUP) {
       // SUP at top - enqueue both branches for later processing
@@ -41,7 +45,7 @@ fn void flatten(Term term, int limit) {
       // Skip erasures
       continue;
     } else {
-      // Non-SUP result - normalize and print
+      // Leaf (no SUPs inside) - normalize and print
       t = snf(t, 0);
       print_term(t);
       printf("\n");
