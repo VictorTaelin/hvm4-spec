@@ -1,6 +1,7 @@
-// Lazy collapse step: recursively searches for SUPs and lifts them.
-// Unlike collapse(), this STOPS when it finds a SUP (doesn't descend into branches).
-// This bounds recursion: we go as deep as needed to find the first SUP, then return.
+// Collapse step: recursively searches for SUPs and lifts them to the top level.
+// Stops when it finds a SUP (doesn't descend into SUP branches).
+// Also strips RED nodes (keeping only RHS) and propagates ERA upward.
+// Used by flatten() for lazy BFS enumeration of superposition branches.
 
 fn Term collapse_step(Term term) {
   term = wnf(term);
@@ -12,8 +13,7 @@ fn Term collapse_step(Term term) {
     case NUM:
     case CO0:
     case CO1:
-    case NAM:
-    case DRY: {
+    case NAM: {
       return term;
     }
 
@@ -35,6 +35,11 @@ fn Term collapse_step(Term term) {
       // Recursively collapse the body to find SUPs
       Term body_collapsed = collapse_step(body);
       HEAP[lam_loc] = body_collapsed;
+
+      // ERA propagation: if body is ERA, whole lambda is ERA
+      if (term_tag(body_collapsed) == ERA) {
+        return term_new_era();
+      }
 
       if (term_tag(body_collapsed) != SUP) {
         // No SUP found in body - return the LAM unchanged
@@ -70,6 +75,13 @@ fn Term collapse_step(Term term) {
         HEAP[loc + i] = subterms[i];
         if (term_tag(subterms[i]) == SUP) {
           has_sup = 1;
+        }
+      }
+
+      // ERA propagation: if any child is ERA, whole node is ERA
+      for (u32 i = 0; i < ari; i++) {
+        if (term_tag(subterms[i]) == ERA) {
+          return term_new_era();
         }
       }
 

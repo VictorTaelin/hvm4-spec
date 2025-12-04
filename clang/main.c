@@ -37,15 +37,8 @@ fn void flatten(Term term, int limit) {
       u32 loc = term_val(t);
       queue[tail++] = HEAP[loc + 0];
       queue[tail++] = HEAP[loc + 1];
-    } else if (term_tag(t) == ERA) {
-      // Skip erasures
-      continue;
-    } else {
-      // Non-SUP result - fully collapse (strips REDs) and normalize
-      t = collapse(t);
-      if (term_tag(t) == ERA) {
-        continue;
-      }
+    } else if (term_tag(t) != ERA) {
+      // Non-SUP, non-ERA result - normalize and print
       t = snf(t, 0);
       print_term(t);
       printf("\n");

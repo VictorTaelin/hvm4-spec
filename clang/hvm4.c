@@ -395,4 +395,3 @@ static u32    PARSE_FRESH_LAB = 0x800000; // start at 2^23 to avoid collision wi
 
 #include "collapse/inject.c"
 #include "collapse/step.c"
-#include "collapse/_.c"
