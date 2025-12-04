@@ -14,8 +14,8 @@
 // Flatten
 // =======
 //
-// Lazy collapse + extraction via BFS traversal.
-// Integrates collapse_step to handle infinite structures without stack overflow.
+// Collapse + extraction via BFS traversal.
+// The collapser uses a spine-based approach that handles SUP cloning properly.
 
 fn void flatten(Term term, int limit) {
   // BFS queue
@@ -24,13 +24,14 @@ fn void flatten(Term term, int limit) {
   int   tail  = 0;
   int   count = 0;
 
+  // Enqueue initial term (will be collapsed in the loop)
   queue[tail++] = term;
 
   while (head < tail && (limit < 0 || count < limit)) {
     Term t = queue[head++];
 
-    // Lazy collapse: lift SUPs one step at a time
-    t = collapse_step(t);
+    // Collapse this term to lift any internal SUPs to top level
+    t = collapser(t);
 
     if (term_tag(t) == SUP) {
       // SUP at top - enqueue both branches for later processing
@@ -41,11 +42,7 @@ fn void flatten(Term term, int limit) {
       // Skip erasures
       continue;
     } else {
-      // Non-SUP result - fully collapse (strips REDs) and normalize
-      t = collapse(t);
-      if (term_tag(t) == ERA) {
-        continue;
-      }
+      // Non-SUP result - normalize and print
       t = snf(t, 0);
       print_term(t);
       printf("\n");

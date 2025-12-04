@@ -2,4 +2,4 @@
 // Using X₀ in position 1 of same-labeled SUP causes world mismatch
 @main = λx. !X&L=x ; &L{1, X₀}
 //λa.1
-//λa._
+//λa.a
