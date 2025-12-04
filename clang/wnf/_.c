@@ -239,6 +239,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
               next = g;
               goto enter;
             }
+            case NUM: {
+              fprintf(stderr, "RUNTIME_ERROR: cannot apply a number\n");
+              exit(1);
+            }
+            case C00 ... C16: {
+              fprintf(stderr, "RUNTIME_ERROR: cannot apply a constructor\n");
+              exit(1);
+            }
             default: {
               whnf = term_new_app(whnf, arg);
               continue;
@@ -508,6 +516,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
               whnf = wnf_dup_node(lab, loc, side, whnf);
               continue;
             }
+            // case APP: // !! DO NOT ADD: DUP does not interact with APP.
             case MAT:
             case SWI:
             case USE:
