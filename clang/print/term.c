@@ -129,8 +129,8 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
         if (term_tag(next) == MAT || term_tag(next) == SWI) fputc(';', f);
         cur = next;
       }
-      // Handle tail: ERA = empty, USE = wrapped default, other = default
-      if (term_tag(cur) == ERA) {
+      // Handle tail: NUM(0) = empty, USE = wrapped default, other = default
+      if (term_tag(cur) == NUM && term_val(cur) == 0) {
         // empty default - just close
       } else if (term_tag(cur) == USE) {
         fputc(';', f);

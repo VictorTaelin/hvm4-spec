@@ -10,7 +10,7 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       return term_new_era();
     }
     // Parse SWI/MAT/USE with chaining
-    Term term = term_new_era();
+    Term term = term_new_num(0);
     Term *tip = &term;
     while (1) {
       parse_skip(s);
@@ -63,7 +63,7 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         parse_match(s, ";");
         u64 loc = heap_alloc(2);
         HEAP[loc + 0] = val;
-        HEAP[loc + 1] = term_new_era();
+        HEAP[loc + 1] = term_new_num(0);
         *tip = term_new(0, tag, ext, loc);
         tip  = &HEAP[loc + 1];
         continue;
@@ -79,7 +79,7 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         parse_skip(s);
         parse_consume(s, ":");
       }
-      if (term == term_new_era()) {
+      if (term == term_new_num(0)) {
         Term f = parse_term(s, depth);
         parse_skip(s);
         parse_consume(s, "}");
