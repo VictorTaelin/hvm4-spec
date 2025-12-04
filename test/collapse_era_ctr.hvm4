@@ -1,3 +1,3 @@
-// Test: #F{&{}} collapses to &{}
+// Test: #F{&{}} collapses to ERA, which is not printed (universe destroyed)
 @main = #F{&{}}
-//&{}
+//

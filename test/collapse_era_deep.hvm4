@@ -1,4 +1,4 @@
-// Test: λx.[0, λy.λz.z(&{})] collapses to &{}
+// Test: λx.[0, λy.λz.z(&{})] collapses to ERA, which is not printed (universe destroyed)
 @id = λx.x
 @main = λx.[0, λy.λz.@id(&{})]
-//&{}
+//

@@ -1,3 +1,3 @@
-// Test: #A{#B{&{}}} collapses to &{}
+// Test: #A{#B{&{}}} collapses to ERA, which is not printed (universe destroyed)
 @main = #A{#B{&{}}}
-//&{}
+//

@@ -42,7 +42,11 @@ fn void flatten(Term term, int limit) {
       continue;
     } else {
       // Non-SUP result - fully collapse (strips REDs) and normalize
-      t = snf(collapse(t), 0);
+      t = collapse(t);
+      if (term_tag(t) == ERA) {
+        continue;
+      }
+      t = snf(t, 0);
       print_term(t);
       printf("\n");
       count++;

@@ -73,7 +73,7 @@ run_tests() {
       collapse_count="$nlines"
     fi
 
-    if [ -z "$expected" ]; then
+    if [ $nlines -eq 0 ]; then
       echo "[FAIL] $name (missing expected result comment)" >&2
       status=1
       continue
