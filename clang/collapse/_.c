@@ -33,6 +33,11 @@ fn Term collapse(Term term) {
       // Collapse the body
       Term body_collapsed = collapse(body);
 
+      // If body collapses to ERA, the whole lambda is ERA
+      if (term_tag(body_collapsed) == ERA) {
+        return term_new_era();
+      }
+
       // Build template: λfV. (λk. fV)
       // - outer lambda binds fV, body location = outer_loc
       // - inner lambda binds k (original), body location = lam_loc
@@ -47,8 +52,34 @@ fn Term collapse(Term term) {
       return collapse_inject(template, args, 1);
     }
 
+    case MAT:
+    case SWI: {
+      // MAT/SWI: collapse(val) goes through inject, chain is collapsed directly
+      // MAT(val, chain) -> inject(λv.MAT(v, collapse(chain)), [collapse(val)])
+      u64 loc = term_val(term);
+      Term val_collapsed = collapse(HEAP[loc + 0]);
+      Term chain_collapsed = collapse(HEAP[loc + 1]);
+
+      // If val collapses to ERA, the whole MAT is ERA
+      if (term_tag(val_collapsed) == ERA) {
+        return term_new_era();
+      }
+      // (chain being ERA is fine - means no default case)
+
+      // Build template: λv. MAT(v, chain_collapsed)
+      u64 lam_loc = heap_alloc(1);
+      u64 mat_loc = heap_alloc(2);
+      HEAP[mat_loc + 0] = term_new(0, VAR, 0, lam_loc);
+      HEAP[mat_loc + 1] = chain_collapsed;
+      HEAP[lam_loc] = term_new(0, term_tag(term), term_ext(term), mat_loc);
+      Term template = term_new(0, LAM, 0, lam_loc);
+
+      Term args[1] = { val_collapsed };
+      return collapse_inject(template, args, 1);
+    }
+
     default: {
-      // Generic case for APP, MAT, CTR, etc.
+      // Generic case for APP, CTR, etc.
       // Template: λv0. λv1. ... T(Var v0, Var v1, ...)
       u32 ari = term_arity(term);
       u64 loc = term_val(term);
@@ -61,6 +92,10 @@ fn Term collapse(Term term) {
       Term collapsed[16];
       for (u32 i = 0; i < ari; i++) {
         collapsed[i] = collapse(HEAP[loc + i]);
+        // If any field collapses to ERA, the whole node is ERA
+        if (term_tag(collapsed[i]) == ERA) {
+          return term_new_era();
+        }
       }
 
       // Allocate lambda body locations (these are also the var binding points)

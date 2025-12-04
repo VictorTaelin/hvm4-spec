@@ -1,0 +1,4 @@
+// Test: λx.[0, λy.λz.z(&{})] collapses to &{}
+@id = λx.x
+@main = λx.[0, λy.λz.@id(&{})]
+//&{}

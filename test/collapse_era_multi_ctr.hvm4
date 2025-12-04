@@ -1,0 +1,3 @@
+// Test: #A{#B{&{}}} collapses to &{}
+@main = #A{#B{&{}}}
+//&{}

@@ -1,0 +1,3 @@
+// Test: #F{&{}} collapses to &{}
+@main = #F{&{}}
+//&{}

@@ -1,0 +1,4 @@
+// Test: ERA propagation through collapse
+// λx.&{} should collapse to &{}
+@main = λx.&{}
+//&{}

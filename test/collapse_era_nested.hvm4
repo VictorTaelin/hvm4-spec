@@ -1,0 +1,3 @@
+// Test: λx.λy.λz.&{} collapses to &{}
+@main = λx.λy.λz.&{}
+//&{}
