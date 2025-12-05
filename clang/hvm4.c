@@ -285,6 +285,7 @@ static u32    PARSE_FRESH_LAB = 0x800000; // start at 2^23 to avoid collision wi
 // =====
 
 #include "parse/error.c"
+#include "parse/error_var.c"
 #include "parse/at_end.c"
 #include "parse/peek_at.c"
 #include "parse/peek.c"

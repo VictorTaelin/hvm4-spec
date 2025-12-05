@@ -114,11 +114,7 @@ fn Term parse_term_lam(PState *s, u32 depth) {
   u32  uses = parse_bind_get_uses();
   // Check for affinity violation on non-cloned variables
   if (!cloned && uses > 1) {
-    fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m\n");
-    fprintf(stderr, "- variable '"); print_name(stderr, nam);
-    fprintf(stderr, "' used %d times (not cloned)\n", uses);
-    fprintf(stderr, "- hint: use λ& to allow multiple uses\n");
-    exit(1);
+    parse_error_affine(nam, uses, 0, "λ&");
   }
   // Apply auto-dup transformation for cloned variables with multiple uses
   if (cloned && uses > 1) {

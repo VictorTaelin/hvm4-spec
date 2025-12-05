@@ -10,11 +10,7 @@ fn Term parse_term_var(PState *s, u32 depth) {
   parse_skip(s);
   // Error if variable is not found in bindings
   if (idx < 0) {
-    char name_buf[16];
-    nick_to_str(nam, name_buf, sizeof(name_buf));
-    fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m\n");
-    fprintf(stderr, "- undefined variable '%s'\n", name_buf);
-    exit(1);
+    parse_error_var("- undefined variable '%s'\n", nam);
   }
   // Handle dynamic dup binding (lab=0xFFFFFF marker)
   // For dynamic dup, X₀ and X₁ become VAR references to nested lambdas
@@ -31,11 +27,7 @@ fn Term parse_term_var(PState *s, u32 depth) {
       parse_bind_inc_side(nam, 1);  // Track X₁ uses for cloned dynamic dup
       return term_new(0, VAR, 0, (u32)(idx - 1));  // X₁ → inner lambda
     } else {
-      char name_buf[16];
-      nick_to_str(nam, name_buf, sizeof(name_buf));
-      fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m\n");
-      fprintf(stderr, "- dynamic dup variable '%s' requires subscript ₀ or ₁\n", name_buf);
-      exit(1);
+      parse_error_var("- dynamic dup variable '%s' requires subscript ₀ or ₁\n", nam);
     }
   }
   // Track per-side uses for cloned dup bindings
