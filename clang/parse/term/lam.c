@@ -1,4 +1,5 @@
 fn Term parse_term(PState *s, u32 depth);
+fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc);
 
 fn Term parse_term_lam(PState *s, u32 depth) {
   parse_skip(s);
@@ -94,6 +95,18 @@ fn Term parse_term_lam(PState *s, u32 depth) {
   // Check for cloned variable: λ&x.body
   u32 cloned = parse_match(s, "&");
   u32 nam = parse_name(s);
+  parse_skip(s);
+  // Check for inline dup: λx&L. F → λx. ! x &L = x; F
+  if (parse_peek(s) == '&') {
+    parse_advance(s);
+    // Allocate slot for val, pre-fill with VAR(0) referring to outer lambda
+    u64 val_loc = heap_alloc(1);
+    HEAP[val_loc] = term_new(0, VAR, 0, 0);
+    Term dup = parse_dup_body(s, nam, cloned, depth + 1, val_loc);
+    u64 loc = heap_alloc(1);
+    HEAP[loc] = dup;
+    return term_new(0, LAM, depth, loc);
+  }
   parse_consume(s, ".");
   parse_bind_push(nam, depth, 0, cloned);
   u64  loc  = heap_alloc(1);
