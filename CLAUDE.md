@@ -14,11 +14,13 @@ HVM4 is a term rewrite system / runtime for the Interaction Calculus.
 cd clang && clang -O2 -o main main.c
 
 # Run a file
-./clang/main test/file.hvm4 -s -C
+./clang/main test/file.hvm4 -s -C10
 
 Where:
 - `-s` shows performance stats
-- `-C` collapses superpositions (use it by default)
+- `-C10` collapses and flattens superpositions
+  - Note: use collapse mode it by default
+  - Note: limit it to 10 lines to avoid infinite streams 
 
 # Run all tests
 ./test/_all_.sh
