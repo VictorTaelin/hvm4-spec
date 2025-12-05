@@ -1,5 +1,4 @@
 fn Term parse_term(PState *s, u32 depth);
-fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc);
 
 fn Term parse_term_lam(PState *s, u32 depth) {
   parse_skip(s);
@@ -10,14 +9,12 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       parse_consume(s, "}");
       return term_new_era();
     }
-    // Parse SWI/MAT/USE with chaining
-    Term term = term_new_num(0);
-    Term *tip = &term;
+    Term  term = term_new_num(0);
+    Term *tip  = &term;
     while (1) {
       parse_skip(s);
       u8  tag = 0;
       u32 ext = 0;
-      // SWI case: 123:
       if (isdigit(parse_peek(s))) {
         u32 sav = s->pos;
         while (isdigit(parse_peek(s))) {
@@ -28,13 +25,15 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         if (parse_peek(s) == ':') {
           tag = SWI;
         } else if (parse_peek(s) == 'n') {
-          // Nat sugar: 0n or Nn+
           if (ext == 0 && parse_peek_at(s, 1) != '+') {
             parse_advance(s);
-            tag = MAT; ext = NAM_ZER;
+            tag = MAT;
+            ext = NAM_ZER;
           } else if (parse_peek_at(s, 1) == '+') {
-            parse_advance(s); parse_advance(s);
-            tag = MAT; ext = NAM_SUC;
+            parse_advance(s);
+            parse_advance(s);
+            tag = MAT;
+            ext = NAM_SUC;
           } else {
             s->pos = sav;
           }
@@ -42,20 +41,23 @@ fn Term parse_term_lam(PState *s, u32 depth) {
           s->pos = sav;
         }
       }
-      // MAT cases: #Name, [], <>
       if (!tag && parse_peek(s) == '#') {
         parse_advance(s);
-        tag = MAT; ext = parse_name(s);
+        tag = MAT;
+        ext = parse_name(s);
       }
       if (!tag && parse_peek(s) == '[' && parse_peek_at(s, 1) == ']') {
-        parse_advance(s); parse_advance(s);
-        tag = MAT; ext = NAM_NIL;
+        parse_advance(s);
+        parse_advance(s);
+        tag = MAT;
+        ext = NAM_NIL;
       }
       if (!tag && parse_peek(s) == '<' && parse_peek_at(s, 1) == '>') {
-        parse_advance(s); parse_advance(s);
-        tag = MAT; ext = NAM_CON;
+        parse_advance(s);
+        parse_advance(s);
+        tag = MAT;
+        ext = NAM_CON;
       }
-      // Found a case - parse body and chain
       if (tag) {
         parse_skip(s);
         parse_consume(s, ":");
@@ -69,12 +71,10 @@ fn Term parse_term_lam(PState *s, u32 depth) {
         tip  = &HEAP[loc + 1];
         continue;
       }
-      // No case found - either }, USE, or default
       if (parse_peek(s) == '}') {
         parse_consume(s, "}");
         return term;
       }
-      // Allow _: prefix for default case
       if (parse_peek(s) == '_') {
         parse_advance(s);
         parse_skip(s);
@@ -92,35 +92,94 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       return term;
     }
   }
-  // Check for cloned variable: λ&x.body
+  // Parse argument: [&]name[&[label|(label)]]
   u32 cloned = parse_match(s, "&");
-  u32 nam = parse_name(s);
+  u32 nam    = parse_name(s);
   parse_skip(s);
-  // Check for inline dup: λx&L. F → λx. ! x &L = x; F
+  // Inline dup: λx&L or λx&(L) or λx&
   if (parse_peek(s) == '&') {
     parse_advance(s);
-    // Allocate slot for val, pre-fill with VAR(0) referring to outer lambda
-    u64 val_loc = heap_alloc(1);
-    HEAP[val_loc] = term_new(0, VAR, 0, 0);
-    Term dup = parse_dup_body(s, nam, cloned, depth + 1, val_loc);
-    u64 loc = heap_alloc(1);
-    HEAP[loc] = dup;
-    return term_new(0, LAM, depth, loc);
+    parse_skip(s);
+    int  dyn      = parse_peek(s) == '(';
+    Term lab_term = 0;
+    u32  lab      = 0;
+    if (dyn) {
+      parse_consume(s, "(");
+      lab_term = parse_term(s, depth);
+      parse_consume(s, ")");
+    } else {
+      char c = parse_peek(s);
+      if (c == ',' || c == '.') {
+        lab = PARSE_FRESH_LAB++;
+      } else {
+        lab = parse_name(s);
+      }
+    }
+    parse_skip(s);
+    u32 d = dyn ? 3 : 2;
+    parse_bind_push(nam, depth + 1, dyn ? 0xFFFFFF : lab, cloned);
+    Term body;
+    if (parse_match(s, ",")) {
+      body = parse_term_lam(s, depth + d);
+    } else {
+      parse_consume(s, ".");
+      body = parse_term(s, depth + d);
+    }
+    u32 uses  = parse_bind_get_uses();
+    u32 uses0 = parse_bind_get_uses0();
+    u32 uses1 = parse_bind_get_uses1();
+    parse_bind_pop();
+    if (dyn) {
+      if (cloned && uses0 > 1) {
+        body = parse_auto_dup(body, 1, uses0, VAR, 0);
+      }
+      if (cloned && uses1 > 1) {
+        body = parse_auto_dup(body, 0, uses1, VAR, 0);
+      }
+      u64 loc1 = heap_alloc(1);
+      HEAP[loc1] = body;
+      u64 loc0 = heap_alloc(1);
+      HEAP[loc0] = term_new(0, LAM, depth + 2, loc1);
+      Term ddu = term_new_ddu(lab_term, term_new(0, VAR, 0, 0), term_new(0, LAM, depth + 1, loc0));
+      u64 lam_loc = heap_alloc(1);
+      HEAP[lam_loc] = ddu;
+      return term_new(0, LAM, depth, lam_loc);
+    } else {
+      if (!cloned && uses > 2) {
+        parse_error_affine(nam, uses, 1, NULL);
+      }
+      if (cloned && uses1 > 1) {
+        body = parse_auto_dup(body, 0, uses1, CO1, lab);
+      }
+      if (cloned && uses0 > 1) {
+        body = parse_auto_dup(body, 0, uses0, CO0, lab);
+      }
+      u64 dup_loc = heap_alloc(2);
+      HEAP[dup_loc + 0] = term_new(0, VAR, 0, 0);
+      HEAP[dup_loc + 1] = body;
+      u64 lam_loc = heap_alloc(1);
+      HEAP[lam_loc] = term_new(0, DUP, lab, dup_loc);
+      return term_new(0, LAM, depth, lam_loc);
+    }
   }
-  parse_consume(s, ".");
+  // Simple arg
   parse_bind_push(nam, depth, 0, cloned);
-  u64  loc  = heap_alloc(1);
-  Term body = parse_term(s, depth + 1);
-  u32  uses = parse_bind_get_uses();
-  // Check for affinity violation on non-cloned variables
+  Term body;
+  if (parse_match(s, ",")) {
+    body = parse_term_lam(s, depth + 1);
+  } else {
+    parse_consume(s, ".");
+    body = parse_term(s, depth + 1);
+  }
+  u32 uses = parse_bind_get_uses();
   if (!cloned && uses > 1) {
     parse_error_affine(nam, uses, 0, "λ&");
   }
-  // Apply auto-dup transformation for cloned variables with multiple uses
   if (cloned && uses > 1) {
     body = parse_auto_dup(body, 0, uses, VAR, 0);
   }
-  HEAP[loc] = body;
   parse_bind_pop();
+  u64 loc = heap_alloc(1);
+  HEAP[loc] = body;
   return term_new(0, LAM, depth, loc);
 }
