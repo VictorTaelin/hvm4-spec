@@ -303,6 +303,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (CO0), 1 =
 #include "parse/auto_dup.c"
 #include "parse/name.c"
 #include "parse/utf8.c"
+#include "parse/term/era.c"
 #include "parse/term/mat.c"
 #include "parse/term/lam.c"
 #include "parse/term/uns.c"
