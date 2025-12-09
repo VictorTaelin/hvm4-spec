@@ -1,33 +1,26 @@
 // Parse a single atom (no trailing operators or function calls)
 fn Term parse_term_atom(PState *s, u32 depth) {
   parse_skip(s);
-  if (parse_match(s, "λ")) {
-    return parse_term_lam(s, depth);
-  } else if (parse_match(s, "!")) {
-    return parse_term_dup(s, depth);
-  } else if (parse_match(s, "&")) {
-    return parse_term_sup(s, depth);
-  } else if (parse_match(s, "#")) {
-    return parse_term_ctr(s, depth);
-  } else if (parse_match(s, "@")) {
-    return parse_term_ref(s);
-  } else if (parse_match(s, "^")) {
-    return parse_term_nam(s, depth);
-  } else if (parse_match(s, "(")) {
-    return parse_term_par(s, depth);
-  } else if (parse_peek(s) == '[') {
-    return parse_term_lst(s, depth);
-  } else if (parse_peek(s) == '\'') {
-    return parse_term_chr(s);
-  } else if (parse_peek(s) == '"') {
-    return parse_term_str(s, depth);
-  } else if (isdigit(parse_peek(s))) {
-    Term t = parse_term_nat(s, depth);
-    if (!t) t = parse_term_num(s);
-    return t;
-  } else {
-    return parse_term_var(s, depth);
-  }
+
+  TermParser atoms[] = { 
+    parse_term_mat,
+    parse_term_lam,
+    parse_term_dup,
+    parse_term_sup,
+    parse_term_ctr,
+    parse_term_ref,
+    parse_term_nam,
+    parse_term_par,
+    parse_term_lst,
+    parse_term_chr,
+    parse_term_str,
+    parse_term_nat,
+    parse_term_num,
+    parse_term_var,
+    NULL 
+  };
+
+  return parse_choice(s, depth, atoms);
 }
 
 fn Term parse_term(PState *s, u32 depth) {

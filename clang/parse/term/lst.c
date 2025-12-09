@@ -1,7 +1,8 @@
 fn Term parse_term(PState *s, u32 depth);
 
 fn Term parse_term_lst(PState *s, u32 depth) {
-  parse_advance(s);
+  // parse_advance(s);
+  if (!parse_match(s, "[")) return 0;
   parse_skip(s);
   if (parse_peek(s) == ']') { parse_advance(s); return term_new_ctr(NAM_NIL, 0, 0); }
   Term es[4096]; u32 n = 0;

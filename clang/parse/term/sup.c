@@ -2,6 +2,7 @@ fn Term parse_term(PState *s, u32 depth);
 fn Term parse_term_fork(PState *s, int dyn, Term lab_term, u32 lab, u32 depth);
 
 fn Term parse_term_sup(PState *s, u32 depth) {
+  if (!parse_match(s, "&")) return 0;
   parse_skip(s);
   if (parse_peek(s) == '{') {
     parse_consume(s, "{");

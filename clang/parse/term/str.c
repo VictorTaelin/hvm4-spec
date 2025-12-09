@@ -1,7 +1,8 @@
 fn Term parse_term(PState *s, u32 depth);
 
 fn Term parse_term_str(PState *s, u32 depth) {
-  parse_advance(s);
+  // parse_advance(s);
+  if (!parse_match(s, "\"")) return 0;
   Term t = term_new_ctr(NAM_NIL, 0, 0);
   u32 cs[4096]; u32 n = 0;
   while (parse_peek(s) != '"') {

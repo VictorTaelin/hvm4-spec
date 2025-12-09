@@ -1,5 +1,6 @@
-fn Term parse_term_chr(PState *s) {
-  parse_advance(s);
+fn Term parse_term_chr(PState *s, u32 depth) {
+  if (!parse_match(s, "\'")) return 0;
+  // parse_advance(s);
   u32 c;
   if (parse_peek(s) == '\\') {
     parse_advance(s);

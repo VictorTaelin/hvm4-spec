@@ -81,6 +81,7 @@ fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
 }
 
 fn Term parse_term_dup(PState *s, u32 depth) {
+  if (!parse_match(s, "!")) return 0;
   parse_skip(s);
   // Check for unscoped binding: ! ${f, v}; body
   if (parse_match(s, "$")) {

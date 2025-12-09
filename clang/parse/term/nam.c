@@ -2,6 +2,7 @@ fn Term parse_term(PState *s, u32 depth);
 
 // ^name or ^(f x)
 fn Term parse_term_nam(PState *s, u32 depth) {
+  if (!parse_match(s, "^")) return 0;
   parse_skip(s);
   if (parse_peek(s) == '(') {
     // ^(f x) -> DRY(f, x)

@@ -1,4 +1,5 @@
-fn Term parse_term_num(PState *s) {
+fn Term parse_term_num(PState *s, u32 depth) {
+  if (!isdigit(parse_peek(s))) return 0;
   parse_skip(s);
   u32 n = 0;
   int has = 0;
