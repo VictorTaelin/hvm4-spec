@@ -3,7 +3,21 @@ fn Term parse_term(PState *s, u32 depth);
 // Fork: &Lλx,y,z{A;B} or &(L)λx,y,z{A;B}
 // Desugars to: λx&L.λy&L.λz&L.&L{A';B'}
 // where A' uses x₀,y₀,z₀ and B' uses x₁,y₁,z₁
-fn Term parse_term_fork(PState *s, int dyn, Term lab_term, u32 lab, u32 depth) {
+fn Term parse_term_fork(PState *s, u32 depth) {
+  if (!parse_match(s, "&")) return 0;
+  int  dyn      = parse_peek(s) == '(';
+  Term lab_term = 0;
+  u32  lab      = 0;
+  if (dyn) {
+    parse_consume(s, "(");
+    lab_term = parse_term(s, depth);
+    parse_consume(s, ")");
+  } else {
+    lab = parse_name(s);
+  }
+  parse_skip(s);
+  if (!parse_match(s, "λ")) return 0;
+
   u32 names[16];
   u32 n = 0;
   names[n++] = parse_name(s);

@@ -5,9 +5,6 @@ fn Term parse_term_mat(PState *s, u32 depth) {
   parse_skip(s);
   if (!parse_match(s, "{")) return 0;
 
-  parse_skip(s);
-  if (parse_match(s, "}")) return term_new_era();
-
   Term  term = term_new_num(0);
   Term *tip  = &term;
   while (1) {
