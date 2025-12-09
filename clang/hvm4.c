@@ -286,7 +286,6 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (CO0), 1 =
 // =====
 
 #include "parse/error.c"
-#include "parse/error_var.c"
 #include "parse/at_end.c"
 #include "parse/peek_at.c"
 #include "parse/peek.c"

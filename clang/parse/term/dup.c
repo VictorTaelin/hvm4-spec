@@ -67,7 +67,7 @@ fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
   u32 uses0     = parse_bind_get_uses0();
   u32 uses1     = parse_bind_get_uses1();
   if (!cloned && uses > 2) {
-    parse_error_affine(nam, uses, 1, NULL);
+    parse_error(s, PERR_AFFINE_DUP(nam, uses));
   }
   if (cloned && uses1 > 1) {
     body = parse_auto_dup(body, 0, uses1, CO1, lab);
@@ -115,7 +115,7 @@ fn Term parse_term_dup(PState *s, u32 depth) {
     u32  uses = parse_bind_get_uses();
     // Check for affinity violation on non-cloned variables
     if (!cloned && uses > 1) {
-      parse_error_affine(nam, uses, 0, "! &");
+      parse_error(s, PERR_AFFINE(nam, uses, "! &"));
     }
     // Apply auto-dup transformation for cloned variables with multiple uses
     if (cloned && uses > 1) {

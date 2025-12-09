@@ -40,7 +40,7 @@ fn Term parse_term_lam_simple(PState *s, u32 depth) {
   }
   u32 uses = parse_bind_get_uses();
   if (!cloned && uses > 1) {
-    parse_error_affine(nam, uses, 0, "λ&");
+    parse_error(s, PERR_AFFINE(nam, uses, "λ&"));
   }
   if (cloned && uses > 1) {
     body = parse_auto_dup(body, 0, uses, VAR, 0);
@@ -106,7 +106,7 @@ fn Term parse_term_lam_dupped(PState *s, u32 depth) {
     return term_new(0, LAM, depth, lam_loc);
   } else {
     if (!cloned && uses > 2) {
-      parse_error_affine(nam, uses, 1, NULL);
+      parse_error(s, PERR_AFFINE_DUP(nam, uses));
     }
     if (cloned && uses1 > 1) {
       body = parse_auto_dup(body, 0, uses1, CO1, lab);

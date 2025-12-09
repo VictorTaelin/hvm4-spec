@@ -19,5 +19,5 @@ fn void parse_def(PState *s) {
     parse_def(s);
     return;
   }
-  parse_error(s, "definition or #include", parse_peek(s));
+  parse_error(s, PERR_DEF_OR_INCLUDE());
 }

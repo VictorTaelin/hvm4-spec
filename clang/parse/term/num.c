@@ -9,7 +9,7 @@ fn Term parse_term_num(PState *s, u32 depth) {
     parse_advance(s);
   }
   if (!has) {
-    parse_error(s, "number", parse_peek(s));
+    parse_error(s, PERR_EXPECTED("number", parse_peek(s)));
   }
   parse_skip(s);
   return term_new_num(n);

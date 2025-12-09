@@ -2,7 +2,7 @@ fn u32 parse_name(PState *s) {
   parse_skip(s);
   char c = parse_peek(s);
   if (!nick_is_init(c)) {
-    parse_error(s, "name", c);
+    parse_error(s, PERR_EXPECTED("name", c));
   }
   u32 k = 0;
   while (nick_is_char(parse_peek(s))) {
@@ -20,7 +20,7 @@ fn u32 parse_name_ref(PState *s) {
   parse_skip(s);
   char c = parse_peek(s);
   if (!nick_is_init(c)) {
-    parse_error(s, "name", c);
+    parse_error(s, PERR_EXPECTED("name", c));
   }
   u32 start = s->pos;
   while (nick_is_char(parse_peek(s))) {

@@ -7,7 +7,7 @@ fn u32 parse_term_args(PState *s, u32 depth, Term *args, u32 max_args) {
   parse_skip(s);
   while (parse_peek(s) != ')') {
     if (cnt >= max_args) {
-      parse_error(s, "too many arguments", parse_peek(s));
+      parse_error(s, PERR_TOO_MANY_ARGS());
     }
     args[cnt++] = parse_term(s, depth);
     parse_skip(s);
