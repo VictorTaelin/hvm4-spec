@@ -3,6 +3,9 @@ fn Term parse_term(PState *s, u32 depth);
 // Parse unscoped binding: ! ${f, v}; body
 // Creates an UNS term containing λf. λv. body
 fn Term parse_term_uns(PState *s, u32 depth) {
+  if (!parse_match(s, "!")) return 0;
+  parse_skip(s);
+  if (!parse_match(s, "$")) return 0;
   parse_skip(s);
   parse_consume(s, "{");
   parse_skip(s);

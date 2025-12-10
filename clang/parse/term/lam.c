@@ -4,12 +4,9 @@ fn Term parse_term_lam_simple(PState *s, u32 depth);
 fn Term parse_term_lam_dupped(PState *s, u32 depth);
 
 fn Term parse_term_lam(PState *s, u32 depth) {
-  //  λx.f
-  // λ&x.f
-  // λx&L.f 
-  // λ&x&L.f
-  // λx&(L).f
-  // λ&x&(L).f
+  // λ[&]x.f
+  // λ[&]x&L.f 
+  // λ[&]x&(L).f
   if (!parse_match(s, "λ")) return 0; //
   return parse_term_lam_go(s,depth);
 }

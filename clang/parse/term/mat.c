@@ -35,6 +35,7 @@ fn Term parse_term_mat(PState *s, u32 depth) {
       // if added clause, seek for the next one
       continue;
     }
+    // fail if no clauses added
     if (term == term_new_num(0)) return 0;
     // close mat, no default
     if (parse_peek(s) == '}') {
