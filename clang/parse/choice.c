@@ -13,6 +13,8 @@ fn Term parse_choice(PState *s, u32 depth, TermParser const *alts) {
       PBind *_PARSE_BINDS = _binds_bytes ? malloc(_binds_bytes) : NULL;
       if (_binds_bytes && !_PARSE_BINDS) sys_error("out of memory");
       if (_PARSE_BINDS_LEN) memcpy(_PARSE_BINDS, PARSE_BINDS, _binds_bytes);
+      // save initial heap state
+      u64 _ALLOC = ALLOC;
 
       // try parser, return if succesful
       Term t = alts[i](s, depth);
@@ -31,6 +33,8 @@ fn Term parse_choice(PState *s, u32 depth, TermParser const *alts) {
       PARSE_FRESH_LAB = _PARSE_FRESH_LAB;
       PARSE_FORK_SIDE = _PARSE_FORK_SIDE;
       if (_PARSE_BINDS) free(_PARSE_BINDS);
+      // restore initial heap state
+      u64 ALLOC = _ALLOC;
     }
     return 0;
 
