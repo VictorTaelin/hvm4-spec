@@ -1,7 +1,6 @@
 fn Term parse_term(PState *s, u32 depth);
 
-// Mat body: assumes λ already consumed
-// Parses: {#K: ...; ...} or {0: ...; ...}
+// {#K:v; 0:v; ..}
 fn Term parse_term_mat_body(PState *s, u32 depth) {
   parse_skip(s);
   if (!parse_match(s, "{")) return 0;

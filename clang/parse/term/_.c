@@ -6,7 +6,7 @@ fn Term parse_term_atom(PState *s, u32 depth) {
   switch (c) {
     case '&':  return parse_term_amp(s, depth);     // &{}, &Lλx{...}, &L{A,B}
     case 0xCE: return parse_term_lambda(s, depth);  // λ (UTF-8: CE BB)
-    case '!':  return parse_term_dup(s, depth);     // !x&L=v;body
+    case '!':  return parse_term_bang(s, depth);    // !$..., !!..., !x=..., !x&...
     case '#':  return parse_term_ctr(s, depth);     // #Name{...}
     case '@':  return parse_term_ref(s, depth);     // @name
     case '^':  return parse_term_nam(s, depth);     // ^name or ^(f x)

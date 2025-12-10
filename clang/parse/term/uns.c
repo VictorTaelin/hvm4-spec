@@ -1,21 +1,20 @@
 fn Term parse_term(PState *s, u32 depth);
 
-// Parse unscoped binding: ! ${f, v}; body
-// Creates an UNS term containing λf. λv. body
-fn Term parse_term_uns(PState *s, u32 depth) {
-  parse_skip(s);
-  parse_consume(s, "{");
+// ${x, k}; b
+fn Term parse_term_uns_body(PState *s, u32 depth) {
+  if (!parse_match(s, "$")) return 0;
+  if (!parse_match(s, "{")) return 0;
   parse_skip(s);
   u32 nam_f = parse_name(s);
   parse_skip(s);
-  parse_match(s, ",");  // optional comma
+  parse_match(s, ",");
   parse_skip(s);
   u32 nam_v = parse_name(s);
   parse_skip(s);
-  parse_match(s, ",");  // optional trailing comma
+  parse_match(s, ",");
   parse_consume(s, "}");
   parse_skip(s);
-  parse_match(s, ";");  // optional semicolon
+  parse_match(s, ";");
   parse_skip(s);
 
   parse_bind_push(nam_f, depth, 0, 0);
@@ -32,4 +31,3 @@ fn Term parse_term_uns(PState *s, u32 depth) {
   Term lam_f = term_new(0, LAM, depth, loc_f);
   return term_new_uns(lam_f);
 }
-

@@ -1,9 +1,6 @@
 fn Term parse_term(PState *s, u32 depth);
 
-// Fork body: assumes & already consumed
-// Parses: Lλx,y,z{A;B} or (L)λx,y,z{A;B}
-// Desugars to: λx&L.λy&L.λz&L.&L{A';B'}
-// where A' uses x₀,y₀,z₀ and B' uses x₁,y₁,z₁
+// [L|(L)]λx,y{a;b}
 fn Term parse_term_fork_body(PState *s, u32 depth) {
   int  dyn      = parse_peek(s) == '(';
   Term lab_term = 0;
@@ -23,7 +20,7 @@ fn Term parse_term_fork_body(PState *s, u32 depth) {
   names[n++] = parse_name(s);
   parse_skip(s);
   while (parse_peek(s) != '{') {
-    parse_match(s, ",");  // optional comma between names
+    parse_match(s, ",");
     parse_skip(s);
     if (parse_peek(s) == '{') break;
     names[n++] = parse_name(s);
@@ -35,25 +32,22 @@ fn Term parse_term_fork_body(PState *s, u32 depth) {
     parse_bind_push(names[i], depth + i * d + 1, dyn ? 0xFFFFFF : lab, 0);
   }
   u32 body_depth = depth + n * d;
-  // Optional &₀: before left branch
   parse_match(s, "&₀:");
   PARSE_FORK_SIDE = 0;
   Term left = parse_term(s, body_depth);
   parse_skip(s);
-  parse_match(s, ";");  // optional semicolon between branches
+  parse_match(s, ";");
   parse_skip(s);
-  // Optional &₁: before right branch
   parse_match(s, "&₁:");
   PARSE_FORK_SIDE = 1;
   Term right = parse_term(s, body_depth);
   PARSE_FORK_SIDE = -1;
   parse_skip(s);
-  parse_match(s, ";");  // optional trailing semicolon
+  parse_match(s, ";");
   parse_consume(s, "}");
   for (u32 i = 0; i < n; i++) {
     parse_bind_pop();
   }
-  // Build body: DSU or SUP
   Term body;
   if (dyn) {
     Term dsu_lab = (term_tag(lab_term) == VAR)
@@ -63,7 +57,6 @@ fn Term parse_term_fork_body(PState *s, u32 depth) {
   } else {
     body = term_new_sup(lab, left, right);
   }
-  // Wrap with λ&L or λ&(L) for each arg (reverse order)
   for (int i = n - 1; i >= 0; i--) {
     u32 dd = depth + i * d;
     if (dyn) {

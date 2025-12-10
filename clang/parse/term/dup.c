@@ -1,26 +1,16 @@
 fn Term parse_term(PState *s, u32 depth);
-fn Term parse_term_uns(PState *s, u32 depth);
 
-// Helper: parse dup after & is consumed. Expects: [(label)] [=val;] body
-// If val is provided (non-zero loc), uses it; otherwise parses "= val;" from input.
-// For λx&L.F sugar, val_loc points to where VAR(0) should go.
-fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
+// [L|(L)] = v; b
+fn Term parse_dup_label_body(PState *s, u32 nam, u32 cloned, u32 depth) {
   parse_skip(s);
-  // Dynamic label: (expr)
   if (parse_peek(s) == '(') {
     parse_consume(s, "(");
     Term lab_term = parse_term(s, depth);
     parse_consume(s, ")");
-    Term val;
-    if (val_loc) {
-      val = HEAP[val_loc];
-      parse_consume(s, ".");
-    } else {
-      parse_consume(s, "=");
-      val = parse_term(s, depth);
-      parse_skip(s);
-      parse_match(s, ";");
-    }
+    parse_consume(s, "=");
+    Term val = parse_term(s, depth);
+    parse_skip(s);
+    parse_match(s, ";");
     parse_skip(s);
     parse_bind_push(nam, depth, 0xFFFFFF, cloned);
     Term body = parse_term(s, depth + 2);
@@ -41,25 +31,18 @@ fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
     Term lam0  = term_new(0, LAM, depth, loc0);
     return term_new_ddu(lab_term, val, lam0);
   }
-  // Static label (or auto if next is = or .)
   u32 lab;
-  char c = parse_peek(s);
-  if (c == '=' || c == '.') {
+  if (parse_peek(s) == '=') {
     lab = PARSE_FRESH_LAB++;
   } else {
     lab = parse_name(s);
   }
-  Term val;
+  parse_skip(s);
+  parse_consume(s, "=");
   u64 loc = heap_alloc(2);
-  if (val_loc) {
-    HEAP[loc] = HEAP[val_loc];
-    parse_consume(s, ".");
-  } else {
-    parse_consume(s, "=");
-    HEAP[loc] = parse_term(s, depth);
-    parse_skip(s);
-    parse_match(s, ";");
-  }
+  HEAP[loc] = parse_term(s, depth);
+  parse_skip(s);
+  parse_match(s, ";");
   parse_skip(s);
   parse_bind_push(nam, depth, lab, cloned);
   Term body     = parse_term(s, depth + 1);
@@ -80,60 +63,12 @@ fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
   return term_new(0, DUP, lab, loc);
 }
 
-fn Term parse_term_dup(PState *s, u32 depth) {
-  if (!parse_match(s, "!")) return 0;
+// [&]x &[L|(L)] = v; b
+fn Term parse_term_dup_stmt_body(PState *s, u32 depth) {
   parse_skip(s);
-  // Check for unscoped binding: ! ${f, v}; body
-  if (parse_match(s, "$")) {
-    return parse_term_uns(s, depth);
-  }
-  // Check for !!x = val or !!&x = val (strict let, optionally cloned)
-  int strict = parse_match(s, "!");
-  parse_skip(s);
-  // Check for cloned: & comes BEFORE name
-  // Cloned let: ! &x = val
-  // Cloned dup: ! &X &L = val  or  ! &X &(L) = val
-  // Regular dup: !x& = val
-  u32 cloned = 0;
-  if (parse_peek(s) == '&') {
-    parse_advance(s);  // consume &
-    parse_skip(s);
-    cloned = 1;
-  }
+  u32 cloned = parse_match(s, "&");
   u32 nam = parse_name(s);
   parse_skip(s);
-  // Check for let sugar: ! x = val; body  →  (λx.body)(val)
-  // Or cloned let: ! &x = val; body
-  if (parse_peek(s) == '=') {
-    parse_advance(s);
-    Term val = parse_term(s, depth);
-    parse_skip(s);
-    parse_match(s, ";");
-    parse_bind_push(nam, depth, 0, cloned);
-    u64  loc  = heap_alloc(1);
-    Term body = parse_term(s, depth + 1);
-    u32  uses = parse_bind_get_uses();
-    // Check for affinity violation on non-cloned variables
-    if (!cloned && uses > 1) {
-      parse_error(s, PERR_AFFINE(nam, uses, "! &"));
-    }
-    // Apply auto-dup transformation for cloned variables with multiple uses
-    if (cloned && uses > 1) {
-      body = parse_auto_dup(body, 0, uses, VAR, 0);
-    }
-    HEAP[loc] = body;
-    parse_bind_pop();
-    Term lam = term_new(0, LAM, depth, loc);
-    if (strict) {
-      // !!x = val; body  →  (λ{λx.body(x)})(val)
-      lam = term_new_use(lam);
-    }
-    return term_new_app(lam, val);
-  }
-  // Regular DUP: !x&label = val; body  or  !x& = val; body (auto-label)
-  // Cloned DUP: !&X &label = val; body  or  !&X & = val; body (auto-label)
-  // Dynamic DUP: !x&(lab) = val; body  (lab is an expression)
-  // Cloned Dynamic DUP: !&X &(lab) = val; body
-  parse_consume(s, "&");
-  return parse_dup_body(s, nam, cloned, depth, 0);
+  if (!parse_match(s, "&")) return 0;
+  return parse_dup_label_body(s, nam, cloned, depth);
 }
