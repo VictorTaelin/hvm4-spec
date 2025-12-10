@@ -2,10 +2,11 @@
 fn Term parse_term_atom(PState *s, u32 depth) {
   parse_skip(s);
 
-  TermParser atoms[] = { 
+  return parse_choice(s, depth, (TermParser[]){ 
     parse_term_any,
     parse_term_era,
     parse_term_mat,
+    parse_term_use,
     parse_term_lam,
     parse_term_dup,
     parse_term_fork,
@@ -21,9 +22,8 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     parse_term_num,
     parse_term_var,
     NULL 
-  };
+  });
 
-  return parse_choice(s, depth, atoms);
 }
 
 fn Term parse_term(PState *s, u32 depth) {
