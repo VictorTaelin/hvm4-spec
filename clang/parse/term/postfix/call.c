@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 fn Term parse_postfix_call(Term f, PState *s, u32 depth, int min_prec) {
   (void)min_prec;
@@ -9,7 +9,7 @@ fn Term parse_postfix_call(Term f, PState *s, u32 depth, int min_prec) {
     return f;
   }
   while (1) {
-    Term arg = parse_term(s, depth);
+    Term arg = parse_term(NONE, s, depth, 0);
     f = term_new_app(f, arg);
     parse_skip(s);
     parse_match(s, ",");  // optional comma

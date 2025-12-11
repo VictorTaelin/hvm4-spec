@@ -1,12 +1,6 @@
-typedef Term (*Parser)(Term f, PState *s, u32 depth, int min_prec);
-
 fn Term parse_choice(Term f, PState *s, u32 depth, int min_prec, Parser const *alts) {
-    int is_postfix = (f != NONE);
-
     while (1) {
         parse_skip(s);
-        Term result = 0;
-
         for (size_t i = 0; alts[i] != NULL; i++) {
             // save initial parser state
             u32 _pos  = s->pos;
@@ -27,8 +21,7 @@ fn Term parse_choice(Term f, PState *s, u32 depth, int min_prec, Parser const *a
             Term t = alts[i](f, s, depth, min_prec);
             if (t) {
                 if (_PARSE_BINDS) free(_PARSE_BINDS);
-                result = t;
-                break;
+                return t;
             }
 
             // restore initial parser state
@@ -44,9 +37,6 @@ fn Term parse_choice(Term f, PState *s, u32 depth, int min_prec, Parser const *a
             // restore initial heap state
             ALLOC = _ALLOC;
         }
-
-        if (!result) return is_postfix ? f : 0;
-        if (!is_postfix) return result;
-        f = result;
+        return 0;
     }
 }

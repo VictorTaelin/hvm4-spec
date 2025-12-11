@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+// fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 fn Term parse_term_str(Term f, PState *s, u32 depth, int min_prec) {
   (void)f; (void)min_prec;

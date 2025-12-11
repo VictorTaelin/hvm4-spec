@@ -197,6 +197,8 @@ typedef struct {
   u32 uses1;   // Number of times X₁ is used (for cloned dup bindings)
 } PBind;
 
+typedef Term (*Parser)(Term f, PState *s, u32 depth, int min_prec);
+
 // Parser Globals
 // ==============
 

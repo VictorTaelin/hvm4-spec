@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+// fn Term parse_term(PState *s, u32 depth);
 
 // Returns operator precedence (higher = binds tighter)
 fn int parse_term_opr_prec(int op) {

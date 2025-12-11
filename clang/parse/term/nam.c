@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+// fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 // ^name or ^(f x)
 fn Term parse_term_nam(Term f, PState *s, u32 depth, int min_prec) {
@@ -8,8 +8,8 @@ fn Term parse_term_nam(Term f, PState *s, u32 depth, int min_prec) {
   if (parse_peek(s) == '(') {
     // ^(f x) -> DRY(f, x)
     parse_consume(s, "(");
-    Term f = parse_term(s, depth);
-    Term x = parse_term(s, depth);
+    Term f = parse_term(NONE, s, depth, 0);
+    Term x = parse_term(NONE, s, depth, 0);
     parse_consume(s, ")");
     return term_new_dry(f, x);
   } else {

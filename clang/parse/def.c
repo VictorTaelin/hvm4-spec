@@ -12,7 +12,7 @@ fn void parse_def(PState *s) {
     u32 nam = parse_name_ref(s);
     parse_consume(s, "=");
     PARSE_BINDS_LEN = 0;
-    Term val        = parse_term(s, 0);
+    Term val        = parse_term(NONE, s, 0, 0);
     u64  loc        = heap_alloc(1);
     HEAP[loc]       = val;
     BOOK[nam]       = (u32)loc;

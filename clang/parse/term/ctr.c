@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 fn Term parse_term_ctr(Term f, PState *s, u32 depth, int min_prec) {
   (void)f; (void)min_prec;
@@ -10,7 +10,7 @@ fn Term parse_term_ctr(Term f, PState *s, u32 depth, int min_prec) {
   if (parse_match(s, "{")) {
     parse_skip(s);
     while (parse_peek(s) != '}') {
-      args[cnt++] = parse_term(s, depth);
+      args[cnt++] = parse_term(NONE, s, depth, 0);
       parse_skip(s);
       parse_match(s, ",");  // optional comma
       parse_skip(s);

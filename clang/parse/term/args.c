@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+// fn Term parse_term(PState *s, u32 depth);
 
 // Parses argument list: (a,b,c,...) and returns count
 // Stores args in provided array
@@ -9,7 +9,7 @@ fn u32 parse_term_args(PState *s, u32 depth, Term *args, u32 max_args) {
     if (cnt >= max_args) {
       parse_error(s, PERR_TOO_MANY_ARGS());
     }
-    args[cnt++] = parse_term(s, depth);
+    args[cnt++] = parse_term(NONE, s, depth, 0);
     parse_skip(s);
     parse_match(s, ",");  // optional comma
     parse_skip(s);

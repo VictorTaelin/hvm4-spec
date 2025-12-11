@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 fn Term parse_term_dup(Term f, PState *s, u32 depth, int min_prec) {
   (void)f; (void)min_prec;
@@ -26,7 +26,7 @@ fn Term parse_term_dup(Term f, PState *s, u32 depth, int min_prec) {
   // Dynamic label: (expr)
   if (parse_peek(s) == '(') {
     parse_consume(s, "(");
-    Term lab_term = parse_term(s, depth);
+    Term lab_term = parse_term(NONE, s, depth, 0);
     parse_consume(s, ")");
     Term val;
     if (val_loc) {
@@ -34,13 +34,13 @@ fn Term parse_term_dup(Term f, PState *s, u32 depth, int min_prec) {
       parse_consume(s, ".");
     } else {
       parse_consume(s, "=");
-      val = parse_term(s, depth);
+      val = parse_term(NONE, s, depth, 0);
       parse_skip(s);
       parse_match(s, ";");
     }
     parse_skip(s);
     parse_bind_push(nam, depth, 0xFFFFFF, cloned);
-    Term body = parse_term(s, depth + 2);
+    Term body = parse_term(NONE, s, depth + 2, 0);
     u32 uses0 = parse_bind_get_uses0();
     u32 uses1 = parse_bind_get_uses1();
     parse_bind_pop();
@@ -73,13 +73,13 @@ fn Term parse_term_dup(Term f, PState *s, u32 depth, int min_prec) {
     parse_consume(s, ".");
   } else {
     parse_consume(s, "=");
-    HEAP[loc] = parse_term(s, depth);
+    HEAP[loc] = parse_term(NONE, s, depth, 0);
     parse_skip(s);
     parse_match(s, ";");
   }
   parse_skip(s);
   parse_bind_push(nam, depth, lab, cloned);
-  Term body     = parse_term(s, depth + 1);
+  Term body     = parse_term(NONE, s, depth + 1, 0);
   u32 uses      = parse_bind_get_uses();
   u32 uses0     = parse_bind_get_uses0();
   u32 uses1     = parse_bind_get_uses1();

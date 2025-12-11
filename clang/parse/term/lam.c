@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 fn Term parse_term_lam_go(PState *s, u32 depth);
 fn Term parse_term_lam_simple(Term f, PState *s, u32 depth, int min_prec);
 fn Term parse_term_lam_dupped(Term f, PState *s, u32 depth, int min_prec);
@@ -35,7 +35,7 @@ fn Term parse_term_lam_simple(Term f, PState *s, u32 depth, int min_prec) {
     body = parse_term_lam_go(s, depth + 1);
   } else {
     parse_consume(s, ".");
-    body = parse_term(s, depth + 1);
+    body = parse_term(NONE, s, depth + 1, 0);
   }
   u32 uses = parse_bind_get_uses();
   if (!cloned && uses > 1) {
@@ -65,7 +65,7 @@ fn Term parse_term_lam_dupped(Term f, PState *s, u32 depth, int min_prec) {
   u32  lab      = 0;
   if (dyn) {
     parse_consume(s, "(");
-    lab_term = parse_term(s, depth + 1);  // +1 because we're inside the outer lambda
+    lab_term = parse_term(NONE, s, depth + 1, 0);  // +1 because we're inside the outer lambda
     parse_consume(s, ")");
   } else {
     char c = parse_peek(s);
@@ -83,7 +83,7 @@ fn Term parse_term_lam_dupped(Term f, PState *s, u32 depth, int min_prec) {
     body = parse_term_lam_go(s, depth + d);
   } else {
     parse_consume(s, ".");
-    body = parse_term(s, depth + d);
+    body = parse_term(NONE, s, depth + d, 0);
   }
   u32 uses  = parse_bind_get_uses();
   u32 uses0 = parse_bind_get_uses0();

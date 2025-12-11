@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 // Fork: &Lλx,y,z{A;B} or &(L)λx,y,z{A;B}
 // Desugars to: λx&L.λy&L.λz&L.&L{A';B'}
@@ -11,7 +11,7 @@ fn Term parse_term_frk(Term f, PState *s, u32 depth, int min_prec) {
   u32  lab      = 0;
   if (dyn) {
     parse_consume(s, "(");
-    lab_term = parse_term(s, depth);
+    lab_term = parse_term(NONE, s, depth, 0);
     parse_consume(s, ")");
   } else {
     lab = parse_name(s);
@@ -39,14 +39,14 @@ fn Term parse_term_frk(Term f, PState *s, u32 depth, int min_prec) {
   // Optional &₀: before left branch
   parse_match(s, "&₀:");
   PARSE_FORK_SIDE = 0;
-  Term left = parse_term(s, body_depth);
+  Term left = parse_term(NONE, s, body_depth, 0);
   parse_skip(s);
   parse_match(s, ";");  // optional semicolon between branches
   parse_skip(s);
   // Optional &₁: before right branch
   parse_match(s, "&₁:");
   PARSE_FORK_SIDE = 1;
-  Term right = parse_term(s, body_depth);
+  Term right = parse_term(NONE, s, body_depth, 0);
   PARSE_FORK_SIDE = -1;
   parse_skip(s);
   parse_match(s, ";");  // optional trailing semicolon

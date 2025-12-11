@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 fn Term parse_term_let(Term f, PState *s, u32 depth, int min_prec) {
   (void)f; (void)min_prec;
@@ -19,12 +19,12 @@ fn Term parse_term_let(Term f, PState *s, u32 depth, int min_prec) {
   parse_skip(s);
   if (!parse_match(s, "=")) return 0;
 
-  Term val = parse_term(s, depth);
+  Term val = parse_term(NONE, s, depth, 0);
   parse_skip(s);
   parse_match(s, ";");
   parse_bind_push(nam, depth, 0, cloned);
   u64  loc  = heap_alloc(1);
-  Term body = parse_term(s, depth + 1);
+  Term body = parse_term(NONE, s, depth + 1, 0);
   u32  uses = parse_bind_get_uses();
   // Check for affinity violation on non-cloned variables
   if (!cloned && uses > 1) {

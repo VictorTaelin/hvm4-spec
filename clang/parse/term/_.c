@@ -37,6 +37,13 @@ fn Term parse_term_atom(PState *s, u32 depth) {
 
 }
 
-fn Term parse_term(PState *s, u32 depth) {
-  return parse_term_app(parse_term_atom(s, depth), s, depth);
+fn Term parse_term_postfix_tight(Term t, PState *s, u32 depth) { 
+  return t;
+}
+
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec) {
+  (void) f;
+  Term t = parse_term_atom(s, depth);
+  t = parse_term_postfix_tight(t, s, depth);
+  return parse_term_infix(t, s, depth, min_prec);
 }

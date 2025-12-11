@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 fn void parse_mat_tag_num(PState *s, u8 *tag, u32 *ext);
 fn void parse_mat_tag_ctr(PState *s, u8 *tag, u32 *ext);
 fn void parse_mat_tag_nil(PState *s, u8 *tag, u32 *ext);
@@ -25,7 +25,7 @@ fn Term parse_term_mat(Term f, PState *s, u32 depth, int min_prec) {
     if (tag) {
       parse_skip(s);
       parse_consume(s, ":");
-      Term val = parse_term(s, depth);
+      Term val = parse_term(NONE, s, depth, 0);
       parse_skip(s);
       parse_match(s, ";");
       u64 loc = heap_alloc(2);
@@ -49,7 +49,7 @@ fn Term parse_term_mat(Term f, PState *s, u32 depth, int min_prec) {
       parse_skip(s);
       parse_consume(s, ":");
     }
-    *tip = parse_term(s, depth);
+    *tip = parse_term(NONE, s, depth, 0);
     // close mat
     parse_skip(s);
     parse_consume(s, "}");

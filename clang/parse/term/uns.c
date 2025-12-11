@@ -1,4 +1,4 @@
-fn Term parse_term(PState *s, u32 depth);
+fn Term parse_term(Term f, PState *s, u32 depth, int min_prec);
 
 // Parse unscoped binding: ! ${f, v}; body
 // Creates an UNS term containing λf. λv. body
@@ -26,7 +26,7 @@ fn Term parse_term_uns(Term f, PState *s, u32 depth, int min_prec) {
   parse_bind_push(nam_v, depth + 1, 0, 0);
   u64 loc_f = heap_alloc(1);
   u64 loc_v = heap_alloc(1);
-  Term body = parse_term(s, depth + 2);
+  Term body = parse_term(NONE, s, depth + 2, 0);
   parse_bind_pop();
   parse_bind_pop();
 
