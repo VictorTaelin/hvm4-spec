@@ -375,6 +375,12 @@ __attribute__((hot)) fn Term wnf(Term term) {
               next = h;
               goto enter;
             }
+            case NAM:
+            case DRY: {
+              // (mat ^n) or (mat ^(f x)): stuck, produce DRY
+              whnf = term_new_dry(mat, whnf);
+              continue;
+            }
             default: {
               whnf = term_new_app(mat, whnf);
               continue;
