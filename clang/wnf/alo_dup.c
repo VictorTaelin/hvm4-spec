@@ -4,6 +4,7 @@
 // ! x' &L = @{s} v
 // @{x',s} t
 fn Term wnf_alo_dup(u32 ls_loc, u32 book_loc, u32 lab) {
+  
   u64 dup_val  = heap_alloc(1);
   u64 bind_ent = heap_alloc(1);
   HEAP[bind_ent] = ((u64)(u32)dup_val << 32) | ls_loc;

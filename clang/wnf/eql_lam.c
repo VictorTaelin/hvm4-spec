@@ -5,7 +5,7 @@
 // bx ← X
 // af === bf
 fn Term wnf_eql_lam(Term a, Term b) {
-  ITRS++;
+  INTERACT("EQL-LAM");
   u32  a_loc = term_val(a);
   u32  b_loc = term_val(b);
   Term af    = HEAP[a_loc];

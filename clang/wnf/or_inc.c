@@ -2,7 +2,7 @@
 // --------- or-inc
 // ↑(a | b)
 fn Term wnf_or_inc(Term inc, Term b) {
-  ITRS++;
+  INTERACT("OR-INC");
   u32  inc_loc = term_val(inc);
   Term a       = HEAP[inc_loc];
   Term or_tm   = term_new_or(a, b);

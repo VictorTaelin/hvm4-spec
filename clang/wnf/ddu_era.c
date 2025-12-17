@@ -2,6 +2,6 @@
 // ----------------- ddu-era
 // &{}
 fn Term wnf_ddu_era() {
-  ITRS++;
+  INTERACT("DDU-ERA");
   return term_new_era();
 }

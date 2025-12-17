@@ -3,7 +3,7 @@
 // ! B &L = b
 // &L{(a0 .&. B₀), (a1 .&. B₁)}
 fn Term wnf_and_sup(Term sup, Term b) {
-  ITRS++;
+  INTERACT("AND-SUP");
   u32  lab = term_ext(sup);
   u32  loc = term_val(sup);
   Term a0  = HEAP[loc + 0];

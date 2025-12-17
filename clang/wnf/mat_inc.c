@@ -2,7 +2,7 @@
 // ------------ mat-inc
 // ↑(λ{...} x)
 fn Term wnf_mat_inc(Term mat, Term inc) {
-  ITRS++;
+  INTERACT("MAT-INC");
   u32  inc_loc = term_val(inc);
   Term x       = HEAP[inc_loc];
   Term app     = term_new_app(mat, x);

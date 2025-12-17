@@ -2,6 +2,7 @@
 // -------------- alo-dry
 // ^(@{s}f @{s}x)
 fn Term wnf_alo_dry(u32 ls_loc, u32 loc) {
+  
   u64 alo_loc0 = heap_alloc(1);
   u64 alo_loc1 = heap_alloc(1);
   HEAP[alo_loc0] = ((u64)ls_loc << 32) | (loc + 0);

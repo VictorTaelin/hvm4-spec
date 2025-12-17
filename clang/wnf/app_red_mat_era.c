@@ -2,6 +2,6 @@
 // ----------------------- app-red-mat-era
 // &{}
 fn Term wnf_app_red_mat_era(void) {
-  ITRS++;
+  INTERACT("APP-RED-MAT-ERA");
   return term_new_era();
 }

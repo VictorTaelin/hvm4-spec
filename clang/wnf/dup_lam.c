@@ -5,7 +5,7 @@
 // x  ← &L{$x0,$x1}
 // ! G &L = f
 fn Term wnf_dup_lam(u32 lab, u32 loc, u8 side, Term lam) {
-  ITRS++;
+  INTERACT("DUP-LAM");
   u32  lam_loc = term_val(lam);
   Term bod     = HEAP[lam_loc];
   u64  a       = heap_alloc(5);

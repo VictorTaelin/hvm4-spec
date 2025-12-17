@@ -6,7 +6,7 @@
 // X₀ ← #K{A₀,B₀,...}
 // X₁ ← #K{A₁,B₁,...}
 fn Term wnf_dup_node(u32 lab, u32 loc, u8 side, Term term) {
-  ITRS++;
+  INTERACT("DUP-NODE");
   u32 ari = term_arity(term);
   if (ari == 0) {
     heap_subst_var(loc, term);

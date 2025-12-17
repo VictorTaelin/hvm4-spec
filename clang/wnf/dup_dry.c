@@ -5,7 +5,7 @@
 // X₀ ← ^(F₀ A₀)
 // X₁ ← ^(F₁ A₁)
 fn Term wnf_dup_dry(u32 lab, u32 loc, u8 side, Term dry) {
-  ITRS++;
+  INTERACT("DUP-DRY");
   u32  d_loc = term_val(dry);
   Copy F     = term_clone(lab, HEAP[d_loc + 0]);
   Copy A     = term_clone(lab, HEAP[d_loc + 1]);

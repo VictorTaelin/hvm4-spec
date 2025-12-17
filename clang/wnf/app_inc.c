@@ -2,7 +2,7 @@
 // -------- app-inc
 // ↑(f x)
 fn Term wnf_app_inc(Term app, Term inc) {
-  ITRS++;
+  INTERACT("APP-INC");
   u32  app_loc = term_val(app);
   u32  inc_loc = term_val(inc);
   Term f       = HEAP[inc_loc];

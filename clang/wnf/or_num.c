@@ -6,7 +6,7 @@
 // -------------------- or-nonzero
 // #1
 fn Term wnf_or_num(Term num, Term b) {
-  ITRS++;
+  INTERACT("OR-NUM");
   u32 val = term_val(num);
   if (val == 0) {
     return b;

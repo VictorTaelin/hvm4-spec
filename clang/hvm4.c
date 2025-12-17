@@ -171,9 +171,13 @@ static int   DEBUG = 0;
 // Step-by-Step Globals
 // ====================
 
-static int   STEP_BY_STEP = 0;  // Enable step-by-step reduction mode
-static u64   ITRS_LIMIT   = 0;  // When >0, wnf stops when ITRS reaches this limit
-static u32   ROOT_LOC     = 0;  // Heap location of root term (for step-by-step printing)
+static int         STEP_BY_STEP = 0;  // Enable step-by-step reduction mode
+static u64         ITRS_LIMIT   = 0;  // When >0, wnf stops when ITRS reaches this limit
+static u32         ROOT_LOC     = 0;  // Heap location of root term (for step-by-step printing)
+static const char* LAST_ITR     = ""; // Name of last interaction (for step-by-step display)
+
+// Interaction macro: increments ITRS and records interaction name
+#define INTERACT(name) do { ITRS++; LAST_ITR = name; } while(0)
 
 // Nick Alphabet
 // =============

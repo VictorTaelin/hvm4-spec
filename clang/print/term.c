@@ -121,25 +121,6 @@ fn void print_mat_name(FILE *f, u32 nam) {
   else { fputc('#', f); print_name(f, nam); }
 }
 
-// Print substitution list as comma-separated heap location names (de Bruijn order)
-fn void print_subst_list(FILE *f, u32 ls_loc) {
-  int first = 1;
-  while (ls_loc != 0) {
-    u64 packed = HEAP[ls_loc];
-    u32 heap_loc = (u32)(packed >> 32);        // upper 32 bits: value
-    u32 next = (u32)(packed & 0xFFFFFFFF);     // lower 32 bits: next
-
-    if (!first) fputc(',', f);
-    first = 0;
-
-    // Print the heap location's name
-    u32 name = print_get_lam_name(heap_loc);
-    print_name(f, name);
-
-    ls_loc = next;
-  }
-}
-
 // Prints APP and DRY chains as f(x,y,z)
 fn void print_app_ex(FILE *f, Term term, u32 ls_loc) {
   Term spine[256];
@@ -189,9 +170,16 @@ fn void print_term_go_ex(FILE *f, Term term, u32 ls_loc) {
         }
         // If not found, loc remains the de Bruijn index (won't name well, but won't crash)
       }
-      // In heap mode or after substitution: loc is heap location
-      u32 name = print_get_lam_name(loc);
-      print_name(f, name);
+      // Check if variable has been substituted
+      Term val = HEAP[loc];
+      if (term_sub(val)) {
+        // Variable is substituted - print the value
+        print_term_go_ex(f, term_unmark(val), 0);
+      } else {
+        // Variable not yet substituted - print name
+        u32 name = print_get_lam_name(loc);
+        print_name(f, name);
+      }
       break;
     }
     case NUM: {
@@ -372,18 +360,14 @@ fn void print_term_go_ex(FILE *f, Term term, u32 ls_loc) {
       break;
     }
     case ALO: {
-      // Print book term with substitution context: @{a→b;c→d}<term>
       u32 alo_loc = term_val(term);
       u64 pair = HEAP[alo_loc];
       u32 tm_loc = (u32)(pair & 0xFFFFFFFF);
       u32 alo_ls_loc = (u32)(pair >> 32);
 
       fputs("@{", f);
-      print_subst_list(f, alo_ls_loc);
-      fputc('}', f);
-
-      // Print the book term with substitution context
       print_term_go_ex(f, HEAP[tm_loc], alo_ls_loc);
+      fputc('}', f);
       break;
     }
     case RED: {

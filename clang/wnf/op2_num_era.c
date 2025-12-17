@@ -2,6 +2,6 @@
 // -------------- op2-num-era
 // &{}
 fn Term wnf_op2_num_era() {
-  ITRS++;
+  INTERACT("OP2-NUM-ERA");
   return term_new_era();
 }

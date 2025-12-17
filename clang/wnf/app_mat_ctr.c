@@ -6,7 +6,7 @@
 // -------------------- app-mat-ctr-miss
 // (m #L{a,b})
 fn Term wnf_app_mat_ctr(Term mat, Term ctr) {
-  ITRS++;
+  INTERACT("APP-MAT-CTR");
   u32 ari = term_tag(ctr) - C00;
   if (term_ext(mat) == term_ext(ctr)) {
     Term res = HEAP[term_val(mat)];

@@ -376,7 +376,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             }
             case NUM: {
               // (mat #n): compare ext(mat) to val(num)
-              ITRS++;
+              INTERACT("MAT-NUM");
               u32  loc = term_val(mat);
               Term f   = HEAP[loc + 0];
               Term g   = HEAP[loc + 1];
@@ -776,7 +776,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
                 goto enter;
               }
               // Otherwise: not equal
-              ITRS++;
+              INTERACT("EQL-NEQ");
               whnf = term_new_num(0);
               continue;
             }

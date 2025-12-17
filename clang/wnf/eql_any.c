@@ -2,7 +2,7 @@
 // ----------- eql-any-l
 // 1
 fn Term wnf_eql_any_l(void) {
-  ITRS++;
+  INTERACT("EQL-ANY");
   return term_new_num(1);
 }
 
@@ -10,6 +10,6 @@ fn Term wnf_eql_any_l(void) {
 // ----------- eql-any-r
 // 1
 fn Term wnf_eql_any_r(void) {
-  ITRS++;
+  INTERACT("EQL-ANY");
   return term_new_num(1);
 }

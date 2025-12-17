@@ -2,7 +2,7 @@
 // --------- use-inc
 // ↑(use x)
 fn Term wnf_use_inc(Term use, Term inc) {
-  ITRS++;
+  INTERACT("USE-INC");
   u32  inc_loc = term_val(inc);
   Term x       = HEAP[inc_loc];
   Term app     = term_new_app(use, x);

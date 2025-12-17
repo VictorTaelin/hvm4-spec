@@ -2,7 +2,7 @@
 // -------------- op2-num-num
 // #(a opr b)
 fn Term wnf_op2_num_num(u32 opr, Term x, Term y) {
-  ITRS++;
+  INTERACT("OP2-NUM-NUM");
   u32 a = term_val(x);
   u32 b = term_val(y);
   u32 result;

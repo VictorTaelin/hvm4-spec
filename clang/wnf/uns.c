@@ -2,7 +2,7 @@
 // ------------- wnf UNS
 // t(λy.λ$x.y, $x)
 fn Term wnf_uns(Term uns) {
-  ITRS++;
+  INTERACT("UNS");
   u32  uns_loc = term_val(uns);
   Term bod     = HEAP[uns_loc + 0];
   u64  loc     = heap_alloc(2);

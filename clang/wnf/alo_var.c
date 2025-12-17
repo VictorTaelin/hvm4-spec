@@ -2,6 +2,7 @@
 // ------ alo-var
 // s[n]
 fn Term wnf_alo_var(u32 ls, u32 idx) {
+  
   for (u32 i = 0; i < idx && ls != 0; i++) {
     ls = (u32)(HEAP[ls] & 0xFFFFFFFF);
   }

@@ -149,8 +149,8 @@ int main(int argc, char **argv) {
     char *line_buf = NULL;
     size_t line_cap = 0;
 
-    // Helper: print term to buffer, output it, then print dashes
-    #define PRINT_STEP(t) do { \
+    // Helper: print term to buffer, output it, then print dashes + interaction name
+    #define PRINT_STEP(t, show_itr) do { \
       FILE *mem = open_memstream(&line_buf, &line_cap); \
       print_term_to(mem, t); \
       fclose(mem); \
@@ -163,11 +163,12 @@ int main(int argc, char **argv) {
       } \
       printf("%s\n", line_buf); \
       for (u32 i = 0; i < width; i++) putchar('-'); \
+      if (show_itr && LAST_ITR[0]) printf(" %s", LAST_ITR); \
       putchar('\n'); \
     } while(0)
 
-    // Print initial state
-    PRINT_STEP(HEAP[ROOT_LOC]);
+    // Print initial state (no interaction name)
+    PRINT_STEP(HEAP[ROOT_LOC], 0);
 
     // Step-by-step loop: each iteration does one interaction
     while (1) {
@@ -179,8 +180,8 @@ int main(int argc, char **argv) {
 
       if (ITRS == old_itrs) break;  // no interaction, done
 
-      // Print after this interaction
-      PRINT_STEP(HEAP[ROOT_LOC]);
+      // Print after this interaction (with interaction name)
+      PRINT_STEP(HEAP[ROOT_LOC], 1);
     }
 
     // Print final result (no dashes after)

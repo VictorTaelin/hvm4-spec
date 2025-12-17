@@ -2,7 +2,7 @@
 // --------------------- app-red-mat-num-match
 // (f #n) ~> z
 fn Term wnf_app_red_mat_num_match(Term f, Term mat, Term num) {
-  ITRS++;
+  INTERACT("APP-RED-MAT-NUM");
   u32  mat_loc = term_val(mat);
   Term z       = HEAP[mat_loc + 0];
   return term_new_red(term_new_app(f, num), z);
@@ -12,7 +12,7 @@ fn Term wnf_app_red_mat_num_match(Term f, Term mat, Term num) {
 // ---------------------------------- app-red-mat-num-miss
 // ((λp.(f p) ~> m) #k)
 fn Term wnf_app_red_mat_num_miss(Term f, Term mat, Term num) {
-  ITRS++;
+  INTERACT("APP-RED-MAT-NUM");
   u32  mat_loc = term_val(mat);
   Term m       = HEAP[mat_loc + 1];
 

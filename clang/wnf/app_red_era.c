@@ -2,6 +2,6 @@
 // -------------- app-red-era
 // &{}
 fn Term wnf_app_red_era(void) {
-  ITRS++;
+  INTERACT("APP-RED-ERA");
   return term_new_era();
 }

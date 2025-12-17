@@ -2,7 +2,7 @@
 // ----------------------- eql-dry
 // (af === bf) & (ax === bx)
 fn Term wnf_eql_dry(Term a, Term b) {
-  ITRS++;
+  INTERACT("EQL-DRY");
   u32  a_loc = term_val(a);
   u32  b_loc = term_val(b);
   Term af    = HEAP[a_loc + 0];

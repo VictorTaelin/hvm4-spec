@@ -6,7 +6,7 @@
 // -------------------- and-nonzero
 // b
 fn Term wnf_and_num(Term num, Term b) {
-  ITRS++;
+  INTERACT("AND-NUM");
   u32 val = term_val(num);
   if (val == 0) {
     return term_new_num(0);

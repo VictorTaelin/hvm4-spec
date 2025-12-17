@@ -8,7 +8,7 @@
 // ------------------------------------- eql-ctr-miss
 // #0
 fn Term wnf_eql_ctr(Term a, Term b) {
-  ITRS++;
+  INTERACT("EQL-CTR");
   u32 a_tag = term_tag(a);
   u32 b_tag = term_tag(b);
   u32 a_ext = term_ext(a);

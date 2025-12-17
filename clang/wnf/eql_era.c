@@ -2,7 +2,7 @@
 // ----------- eql-era-l
 // &{}
 fn Term wnf_eql_era_l(void) {
-  ITRS++;
+  INTERACT("EQL-ERA");
   return term_new_era();
 }
 
@@ -10,6 +10,6 @@ fn Term wnf_eql_era_l(void) {
 // ----------- eql-era-r
 // &{}
 fn Term wnf_eql_era_r(void) {
-  ITRS++;
+  INTERACT("EQL-ERA");
   return term_new_era();
 }

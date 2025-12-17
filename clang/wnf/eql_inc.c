@@ -2,7 +2,7 @@
 // ----------- eql-inc-l
 // ↑(a === b)
 fn Term wnf_eql_inc_l(Term inc, Term b) {
-  ITRS++;
+  INTERACT("EQL-INC");
   u32  inc_loc = term_val(inc);
   Term a       = HEAP[inc_loc];
   Term eql     = term_new_eql(a, b);
@@ -14,7 +14,7 @@ fn Term wnf_eql_inc_l(Term inc, Term b) {
 // ----------- eql-inc-r
 // ↑(a === b)
 fn Term wnf_eql_inc_r(Term a, Term inc) {
-  ITRS++;
+  INTERACT("EQL-INC");
   u32  inc_loc = term_val(inc);
   Term b       = HEAP[inc_loc];
   Term eql     = term_new_eql(a, b);
