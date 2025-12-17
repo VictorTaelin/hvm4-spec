@@ -55,7 +55,7 @@ fn void flatten(Term term, int limit, int show_itrs) {
       pqueue_push(&pq, (PQItem){.pri = (u8)(pri + 1), .loc = sup_loc + 1});
     } else if (term_tag(t) != ERA) {
       // Non-SUP, non-ERA result - normalize and print
-      t = snf(t, 0);
+      t = snf(t, 0, 1);  // quote=1: use quoted lambdas for collapser
       print_term(t);
       if (show_itrs) {
         printf(" \033[2m#%llu\033[0m", ITRS);
@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
     flatten(main_ref, opts.collapse_limit, opts.stats);
   } else {
     // Standard evaluation to strong normal form
-    Term result = snf(main_ref, 0);
+    Term result = snf(main_ref, 0, 0);  // quote=0: normal lambdas for printer
     print_term(result);
     printf("\n");
   }

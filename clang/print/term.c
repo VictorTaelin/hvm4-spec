@@ -1,6 +1,105 @@
-fn void print_term_go(FILE *f, Term term, u32 depth);
+// Global naming state for print
+// ==============================
 
-fn void print_ctr(FILE *f, Term t, u32 d);
+#define PRINT_MAX_NAMES 65536
+#define PRINT_MAX_DUPS  65536
+
+// Maps body location -> name index for LAM/VAR (lowercase: a, b, c, ...)
+static u32 print_lam_locs[PRINT_MAX_NAMES];
+static u32 print_lam_names[PRINT_MAX_NAMES];
+static u32 print_lam_count = 0;
+
+// Maps dup location -> name index for DUP/CO0/CO1 (uppercase: A, B, C, ...)
+static u32 print_dup_locs[PRINT_MAX_NAMES];
+static u32 print_dup_names[PRINT_MAX_NAMES];
+static u32 print_dup_count = 0;
+
+// Queue of dup locations to print after main term
+static u32 print_dup_queue[PRINT_MAX_DUPS];
+static u32 print_dup_queue_len = 0;
+
+// Set of already-seen dup locations (to avoid loops)
+static u32 print_dup_seen[PRINT_MAX_DUPS];
+static u32 print_dup_seen_len = 0;
+
+// Labels for discovered dups
+static u32 print_dup_labels[PRINT_MAX_DUPS];
+
+// Fresh name counters
+static u32 print_fresh_lam = 0;  // lowercase: 1='a', 2='b', ...
+static u32 print_fresh_dup = 0;  // uppercase: 27='A', 28='B', ...
+
+fn void print_reset(void) {
+  print_lam_count = 0;
+  print_dup_count = 0;
+  print_dup_queue_len = 0;
+  print_dup_seen_len = 0;
+  print_fresh_lam = 0;
+  print_fresh_dup = 0;
+}
+
+// Get or create lowercase name for a LAM/VAR body location
+fn u32 print_get_lam_name(u32 loc) {
+  for (u32 i = 0; i < print_lam_count; i++) {
+    if (print_lam_locs[i] == loc) return print_lam_names[i];
+  }
+  // Create new name
+  u32 name = 1 + print_fresh_lam++;  // 1='a', 2='b', ...
+  if (print_lam_count < PRINT_MAX_NAMES) {
+    print_lam_locs[print_lam_count] = loc;
+    print_lam_names[print_lam_count] = name;
+    print_lam_count++;
+  }
+  return name;
+}
+
+// Get or create uppercase name for a DUP/CO0/CO1 location
+fn u32 print_get_dup_name(u32 loc) {
+  for (u32 i = 0; i < print_dup_count; i++) {
+    if (print_dup_locs[i] == loc) return print_dup_names[i];
+  }
+  // Create new name
+  u32 name = 27 + print_fresh_dup++;  // 27='A', 28='B', ...
+  if (print_dup_count < PRINT_MAX_NAMES) {
+    print_dup_locs[print_dup_count] = loc;
+    print_dup_names[print_dup_count] = name;
+    print_dup_count++;
+  }
+  return name;
+}
+
+// Check if dup location has been seen
+fn int print_dup_is_seen(u32 loc) {
+  for (u32 i = 0; i < print_dup_seen_len; i++) {
+    if (print_dup_seen[i] == loc) return 1;
+  }
+  return 0;
+}
+
+// Mark dup location as seen and add to queue (with label)
+fn void print_discover_dup_with_label(u32 loc, u32 lab) {
+  if (print_dup_is_seen(loc)) return;
+  if (print_dup_seen_len < PRINT_MAX_DUPS) {
+    print_dup_seen[print_dup_seen_len] = loc;
+    print_dup_labels[print_dup_seen_len] = lab;
+    print_dup_seen_len++;
+  }
+  if (print_dup_queue_len < PRINT_MAX_DUPS) {
+    print_dup_queue[print_dup_queue_len++] = loc;
+  }
+}
+
+// Get stored label for a dup location
+fn u32 print_get_dup_label(u32 loc) {
+  for (u32 i = 0; i < print_dup_seen_len; i++) {
+    if (print_dup_seen[i] == loc) return print_dup_labels[i];
+  }
+  return 0;  // default label
+}
+
+fn void print_term_go(FILE *f, Term term);
+
+fn void print_ctr(FILE *f, Term t);
 
 fn void print_mat_name(FILE *f, u32 nam) {
   if (nam == NAM_ZER) fputs("0n", f);
@@ -11,7 +110,7 @@ fn void print_mat_name(FILE *f, u32 nam) {
 }
 
 // Prints APP and DRY chains as f(x,y,z)
-fn void print_app(FILE *f, Term term, u32 depth) {
+fn void print_app(FILE *f, Term term) {
   Term spine[256];
   u32  len  = 0;
   Term curr = term;
@@ -22,22 +121,22 @@ fn void print_app(FILE *f, Term term, u32 depth) {
   }
   if (term_tag(curr) == LAM) {
     fputc('(', f);
-    print_term_go(f, curr, depth);
+    print_term_go(f, curr);
     fputc(')', f);
   } else {
-    print_term_go(f, curr, depth);
+    print_term_go(f, curr);
   }
   fputc('(', f);
   for (u32 i = 0; i < len; i++) {
     if (i > 0) {
       fputc(',', f);
     }
-    print_term_go(f, spine[len - 1 - i], depth);
+    print_term_go(f, spine[len - 1 - i]);
   }
   fputc(')', f);
 }
 
-fn void print_term_go(FILE *f, Term term, u32 depth) {
+fn void print_term_go(FILE *f, Term term) {
   switch (term_tag(term)) {
     case NAM: {
       // Print stuck variable as just the name
@@ -46,12 +145,14 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     }
     case DRY: {
       // Print stuck application as f(x,y)
-      print_app(f, term, depth);
+      print_app(f, term);
       break;
     }
     case VAR: {
-      // Unresolved variable (should have been substituted to NAM by snf)
-      fputs("_", f);
+      // Get name keyed by body location
+      u32 loc = term_val(term);
+      u32 name = print_get_lam_name(loc);
+      print_name(f, name);
       break;
     }
     case NUM: {
@@ -78,21 +179,50 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     }
     case CO0:
     case CO1: {
-      // Unresolved copy reference (unscoped variable)
-      fputs(term_tag(term) == CO0 ? "_₀" : "_₁", f);
+      // Dup variable - uppercase name
+      u32 loc = term_val(term);
+      u32 lab = term_ext(term);
+      u8 side = (term_tag(term) == CO0) ? 0 : 1;
+      Term val = HEAP[loc];
+      // Only follow SUBSTITUTED CO0/CO1 (same dup, other side forwarding)
+      // Non-substituted CO0/CO1 are VALUES of distinct dups
+      while (term_sub(val) && (term_tag(term_unmark(val)) == CO0 || term_tag(term_unmark(val)) == CO1)) {
+        Term uval = term_unmark(val);
+        u8 chain_side = (term_tag(uval) == CO0) ? 0 : 1;
+        side ^= chain_side;
+        loc = term_val(uval);
+        lab = term_ext(uval);
+        val = HEAP[loc];
+      }
+      u32 name = print_get_dup_name(loc);
+      print_name(f, name);
+      if (side == 0) {
+        fputs("\xe2\x82\x80", f);  // ₀
+      } else {
+        fputs("\xe2\x82\x81", f);  // ₁
+      }
+      print_discover_dup_with_label(loc, lab);
       break;
     }
     case LAM: {
       u32 loc = term_val(term);
-      u32 nam = depth + 1;
+      u32 ext = term_ext(term);
+      u32 name;
+      if (ext > 0) {
+        // Quoted lambda (ext holds the variable name)
+        name = ext;
+      } else {
+        // Normal lambda - use location-based naming
+        name = print_get_lam_name(loc);
+      }
       fputs("λ", f);
-      print_name(f, nam);
+      print_name(f, name);
       fputc('.', f);
-      print_term_go(f, HEAP[loc], depth + 1);
+      print_term_go(f, HEAP[loc]);
       break;
     }
     case APP: {
-      print_app(f, term, depth);
+      print_app(f, term);
       break;
     }
     case SUP: {
@@ -100,23 +230,23 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
       fputc('&', f);
       print_name(f, term_ext(term));
       fputc('{', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputc(',', f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc('}', f);
       break;
     }
     case DUP: {
       u32 loc = term_val(term);
-      u32 nam = depth + 1;
+      u32 name = print_get_dup_name(loc);
       fputc('!', f);
-      print_name(f, nam);
+      print_name(f, name);
       fputc('&', f);
       print_name(f, term_ext(term));
       fputc('=', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputc(';', f);
-      print_term_go(f, HEAP[loc + 1], depth + 1);
+      print_term_go(f, HEAP[loc + 1]);
       break;
     }
     case MAT:
@@ -128,7 +258,7 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
         if (term_tag(cur) == SWI) fprintf(f, "%u", term_ext(cur));
         else print_mat_name(f, term_ext(cur));
         fputc(':', f);
-        print_term_go(f, HEAP[loc + 0], depth);
+        print_term_go(f, HEAP[loc + 0]);
         Term next = HEAP[loc + 1];
         if (term_tag(next) == MAT || term_tag(next) == SWI) fputc(';', f);
         cur = next;
@@ -138,10 +268,10 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
         // empty default - just close
       } else if (term_tag(cur) == USE) {
         fputc(';', f);
-        print_term_go(f, HEAP[term_val(cur)], depth);
+        print_term_go(f, HEAP[term_val(cur)]);
       } else {
         fputc(';', f);
-        print_term_go(f, cur, depth);
+        print_term_go(f, cur);
       }
       fputc('}', f);
       break;
@@ -149,12 +279,12 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     case USE: {
       u32 loc = term_val(term);
       fputs("λ{", f);
-      print_term_go(f, HEAP[loc], depth);
+      print_term_go(f, HEAP[loc]);
       fputc('}', f);
       break;
     }
     case C00 ... C16: {
-      print_ctr(f, term, depth);
+      print_ctr(f, term);
       break;
     }
     case OP2: {
@@ -165,34 +295,34 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
         "~", "==", "!=", "<", "<=", ">", ">="
       };
       fputc('(', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputc(' ', f);
       if (opr < 17) fputs(op_syms[opr], f);
       else fprintf(f, "?%u", opr);
       fputc(' ', f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(')', f);
       break;
     }
     case DSU: {
       u32 loc = term_val(term);
       fputs("&(", f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs("){", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(',', f);
-      print_term_go(f, HEAP[loc + 2], depth);
+      print_term_go(f, HEAP[loc + 2]);
       fputc('}', f);
       break;
     }
     case DDU: {
       u32 loc = term_val(term);
       fputs("!(", f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs(")=", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(';', f);
-      print_term_go(f, HEAP[loc + 2], depth);
+      print_term_go(f, HEAP[loc + 2]);
       break;
     }
     case ALO: {
@@ -201,35 +331,35 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
     }
     case RED: {
       u32 loc = term_val(term);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs(" ~> ", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       break;
     }
     case EQL: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs(" === ", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(')', f);
       break;
     }
     case AND: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs(" .&. ", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(')', f);
       break;
     }
     case OR: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_go(f, HEAP[loc + 0], depth);
+      print_term_go(f, HEAP[loc + 0]);
       fputs(" .|. ", f);
-      print_term_go(f, HEAP[loc + 1], depth);
+      print_term_go(f, HEAP[loc + 1]);
       fputc(')', f);
       break;
     }
@@ -237,35 +367,37 @@ fn void print_term_go(FILE *f, Term term, u32 depth) {
       u32 loc = term_val(term);
       // UNS body is λf.λv.actual_body - extract names from depths
       Term lam_f = HEAP[loc];
-      u32 nam_f = depth + 1;
-      Term lam_v = HEAP[term_val(lam_f)];
-      u32 nam_v = depth + 2;
-      Term body = HEAP[term_val(lam_v)];
+      u32 loc_f = term_val(lam_f);
+      u32 nam_f = print_get_lam_name(loc_f);
+      Term lam_v = HEAP[loc_f];
+      u32 loc_v = term_val(lam_v);
+      u32 nam_v = print_get_lam_name(loc_v);
+      Term body = HEAP[loc_v];
       fputs("! ", f);
       print_name(f, nam_f);
       fputs(" = λ ", f);
       print_name(f, nam_v);
       fputs(" ; ", f);
-      print_term_go(f, body, depth + 2);
+      print_term_go(f, body);
       break;
     }
     case INC: {
       u32 loc = term_val(term);
       fputs("↑", f);
-      print_term_go(f, HEAP[loc], depth);
+      print_term_go(f, HEAP[loc]);
       break;
     }
   }
 }
 
-fn void print_ctr(FILE *f, Term t, u32 d) {
+fn void print_ctr(FILE *f, Term t) {
   u32 nam = term_ext(t), loc = term_val(t), ari = term_tag(t) - C00;
   // Nat: count SUCs, print as Nn or Nn+x
   if (nam == NAM_ZER || nam == NAM_SUC) {
     u32 n = 0;
     while (term_tag(t) == C01 && term_ext(t) == NAM_SUC) { n++; t = HEAP[term_val(t)]; }
     fprintf(f, "%un", n);
-    if (!(term_tag(t) == C00 && term_ext(t) == NAM_ZER)) { fputc('+', f); print_term_go(f, t, d); }
+    if (!(term_tag(t) == C00 && term_ext(t) == NAM_ZER)) { fputc('+', f); print_term_go(f, t); }
     return;
   }
   // Char: 'x' or 'λ'
@@ -304,23 +436,41 @@ fn void print_ctr(FILE *f, Term t, u32 d) {
       fputc('[', f);
       for (Term x = t; term_tag(x) == C02; x = HEAP[term_val(x)+1]) {
         if (x != t) fputc(',', f);
-        print_term_go(f, HEAP[term_val(x)], d);
+        print_term_go(f, HEAP[term_val(x)]);
       }
       fputc(']', f);
       return;
     }
     // Improper list: h<>t
     if (nam == NAM_CON) {
-      print_term_go(f, HEAP[loc], d); fputs("<>", f); print_term_go(f, HEAP[loc+1], d);
+      print_term_go(f, HEAP[loc]); fputs("<>", f); print_term_go(f, HEAP[loc+1]);
       return;
     }
   }
   // Default CTR
   fputc('#', f); print_name(f, nam); fputc('{', f);
-  for (u32 i = 0; i < ari; i++) { if (i) fputc(',', f); print_term_go(f, HEAP[loc+i], d); }
+  for (u32 i = 0; i < ari; i++) { if (i) fputc(',', f); print_term_go(f, HEAP[loc+i]); }
   fputc('}', f);
 }
 
 fn void print_term(Term term) {
-  print_term_go(stdout, term, 0);
+  print_reset();
+  print_term_go(stdout, term);
+
+  // Print discovered dups (on same line, no spaces)
+  // Process queue - may grow as we print more dups
+  u32 processed = 0;
+  while (processed < print_dup_queue_len) {
+    u32 loc = print_dup_queue[processed++];
+    u32 name = print_get_dup_name(loc);
+    u32 lab = print_get_dup_label(loc);
+
+    fputc('!', stdout);
+    print_name(stdout, name);
+    fputc('&', stdout);
+    print_name(stdout, lab);
+    fputc('=', stdout);
+    print_term_go(stdout, HEAP[loc]);
+    fputc(';', stdout);
+  }
 }
