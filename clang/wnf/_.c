@@ -346,10 +346,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
         }
 
         // -----------------------------------------------------------------------
-        // MAT/SWI frame: (mat □) - we reduced arg, dispatch mat interaction
+        // MAT frame: (mat □) - we reduced arg, dispatch constructor match
         // -----------------------------------------------------------------------
-        case MAT:
-        case SWI: {
+        case MAT: {
           Term mat = frame;
           switch (term_tag(whnf)) {
             case ERA: {
@@ -368,8 +367,50 @@ __attribute__((hot)) fn Term wnf(Term term) {
               next = wnf_app_mat_ctr(mat, whnf);
               goto enter;
             }
+            case RED: {
+              // (mat (g ~> h)): drop g, reduce (mat h)
+              u32  red_loc = term_val(whnf);
+              Term h = HEAP[red_loc + 1];
+              STACK[S_POS++] = mat;
+              next = h;
+              goto enter;
+            }
+            case CO0:
+            case CO1:
+            case NAM:
+            case VAR:
+            case DRY: {
+              // (mat ^n) or (mat ^(f x)): stuck, produce DRY
+              whnf = term_new_dry(mat, whnf);
+              continue;
+            }
+            default: {
+              // MAT expects a constructor - anything else is a type error
+              sys_error("type error: match expects a constructor");
+            }
+          }
+        }
+
+        // -----------------------------------------------------------------------
+        // SWI frame: (swi □) - we reduced arg, dispatch number switch
+        // -----------------------------------------------------------------------
+        case SWI: {
+          Term mat = frame;
+          switch (term_tag(whnf)) {
+            case ERA: {
+              whnf = wnf_app_era();
+              continue;
+            }
+            case SUP: {
+              next = wnf_app_mat_sup(mat, whnf);
+              goto enter;
+            }
+            case INC: {
+              next = wnf_mat_inc(mat, whnf);
+              goto enter;
+            }
             case NUM: {
-              // (mat #n): compare ext(mat) to val(num)
+              // (swi #n): compare ext(mat) to val(num)
               ITRS++;
               u32  loc = term_val(mat);
               Term f   = HEAP[loc + 0];
@@ -382,22 +423,25 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case RED: {
-              // (mat (g ~> h)): drop g, reduce (mat h)
+              // (swi (g ~> h)): drop g, reduce (swi h)
               u32  red_loc = term_val(whnf);
               Term h = HEAP[red_loc + 1];
               STACK[S_POS++] = mat;
               next = h;
               goto enter;
             }
+            case CO0:
+            case CO1:
             case NAM:
+            case VAR:
             case DRY: {
-              // (mat ^n) or (mat ^(f x)): stuck, produce DRY
+              // (swi ^n) or (swi ^(f x)): stuck, produce DRY
               whnf = term_new_dry(mat, whnf);
               continue;
             }
             default: {
-              whnf = term_new_app(mat, whnf);
-              continue;
+              // SWI expects a number - anything else is a type error
+              sys_error("type error: switch expects a number");
             }
           }
         }
@@ -411,6 +455,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
           u32  red_loc = term_val(red);
           Term f       = HEAP[red_loc + 0];
           Term mat     = HEAP[red_loc + 1];  // mat was stored here
+          u8   mat_tag = term_tag(mat);
           switch (term_tag(whnf)) {
             case ERA: {
               whnf = wnf_app_red_mat_era();
@@ -425,6 +470,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case C00 ... C16: {
+              // CTR only valid for MAT, not SWI
+              if (mat_tag == SWI) {
+                sys_error("type error: switch expects a number");
+              }
               if (term_ext(mat) == term_ext(whnf)) {
                 next = wnf_app_red_mat_ctr_match(f, mat, whnf);
               } else {
@@ -433,6 +482,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case NUM: {
+              // NUM only valid for SWI, not MAT
+              if (mat_tag == MAT) {
+                sys_error("type error: match expects a constructor");
+              }
               if (term_ext(mat) == term_val(whnf)) {
                 next = wnf_app_red_mat_num_match(f, mat, whnf);
               } else {
@@ -448,10 +501,22 @@ __attribute__((hot)) fn Term wnf(Term term) {
               next = h;
               goto enter;
             }
-            default: {
+            case CO0:
+            case CO1:
+            case NAM:
+            case VAR:
+            case DRY: {
               // Stuck - drop g, return ^(f arg)
               whnf = term_new_dry(f, whnf);
               continue;
+            }
+            default: {
+              // Type error - mat received unexpected type
+              if (mat_tag == MAT) {
+                sys_error("type error: match expects a constructor");
+              } else {
+                sys_error("type error: switch expects a number");
+              }
             }
           }
         }
@@ -768,6 +833,19 @@ __attribute__((hot)) fn Term wnf(Term term) {
               if (a_tag == DRY && b_tag == DRY) {
                 next = wnf_eql_dry(a, whnf);
                 goto enter;
+              }
+              // VAR === VAR: compare locations (same free variable)
+              if (a_tag == VAR && b_tag == VAR) {
+                whnf = term_new_num(term_val(a) == term_val(whnf) ? 1 : 0);
+                continue;
+              }
+              // NAM or VAR compared with anything else: stuck
+              // (can't determine equality with free/bound variable)
+              if (a_tag == NAM || b_tag == NAM || a_tag == VAR || b_tag == VAR) {
+                HEAP[loc + 0] = a;
+                HEAP[loc + 1] = whnf;
+                whnf = term_new(0, EQL, 0, loc);
+                continue;
               }
               // Otherwise: not equal
               ITRS++;
