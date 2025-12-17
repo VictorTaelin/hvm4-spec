@@ -438,3 +438,4 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (CO0), 1 =
 
 #include "collapse/inject.c"
 #include "collapse/step.c"
+#include "collapse/flatten.c"
