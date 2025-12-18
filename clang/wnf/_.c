@@ -410,16 +410,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case NUM: {
-              // (swi #n): compare ext(mat) to val(num)
-              ITRS++;
-              u32  loc = term_val(mat);
-              Term f   = HEAP[loc + 0];
-              Term g   = HEAP[loc + 1];
-              if (term_ext(mat) == term_val(whnf)) {
-                next = f;
-              } else {
-                next = term_new_app(g, whnf);
-              }
+              next = wnf_app_swi_num(mat, whnf);
               goto enter;
             }
             case RED: {
@@ -836,7 +827,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
               }
               // VAR === VAR: compare locations (same free variable)
               if (a_tag == VAR && b_tag == VAR) {
-                whnf = term_new_num(term_val(a) == term_val(whnf) ? 1 : 0);
+                whnf = wnf_eql_var(a, whnf);
                 continue;
               }
               // NAM or VAR compared with anything else: stuck
