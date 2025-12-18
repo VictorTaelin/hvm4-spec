@@ -42,7 +42,7 @@ Book terms (parsed definitions) use de Bruijn indices and are immutable:
 Runtime terms (after ALO allocation) use heap locations:
   - VAR : ext = 0         ; val = binding_lam_body_location
   - CO_ : ext = dup_label ; val = binding_dup_expr_location
-  - LAM : ext = 0         ; val = expr_location
+  - LAM : ext = 0         ; val = body_location
   - DUP : ext = 0         ; val = expr_location
 
 ## ALO (Allocation) Nodes
