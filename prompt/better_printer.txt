@@ -1,0 +1,168 @@
+# Task 1: print unscoped lambdas and floating dups with matching names
+
+In HVM4, lambdas can be unbound, meaning their variables occur outside of their
+bodies, and dups "float" in the global heap, meaning they don't even have a
+body. Because of that, variables that occur outside of their bodies are printed
+as '_', which is wrong, and dups aren't even printed, at all.
+
+For example, consider this new test, named snf_unscoped:
+
+@main = λk.
+  ! F = λx; // creates an unbound lam/var pair: F = λa.$x.a and x = $x
+  ! K &L = k; // clones k with a &L label
+  #Tup{x, F, K₀, K₁, λv.v}
+
+Currently, running it with `./clang/main bad.hvm4` results in:
+
+λa.#Tup{_,λb.λc.b,a,a,λa.a}
+
+This is wrong, since:
+
+- the '_' variable is not matching the 'λc' lambda
+
+- the dup node is not showing up
+
+- it shows 'a' twice instead of the dup node vars
+
+Instead, the correct output should've been:
+
+λa.λb.#Tup{d,λc.λd.c,A₀,A₁,λe.e}!A&L=a;
+
+Notice that:
+
+- each lam/dup-bound variable has a globally unique name (instead of being lexical)
+
+- all visible dups are printed after the term
+
+- λ-bound variables are lowercase (a, b, c, ... aa, ab, ...), dup-bound
+  variables are uppercase (A, B, C, ..., AA, AB, ...)
+
+- unscoped variables work fine
+
+To achieve that, we must modify the pretty printer to include a global variable
+naming scheme, keyed by the location of λ bodies and dup exprs. That is,
+whenever we find a VAR or LAM, we assign a fresh, globally unique name to the
+pair, keyed by the LAM's body location (which is the val() of the VAR Term, or
+the val() of the LAM Term - both coincide). That works because both the VAR and
+the LAM store that same location on the val() field of their Terms. Then, we
+just print the variable with that unique name, and the lambda with that name.
+
+As for dups, since they *float* in the global scope, we must also *detect* dups
+when we reach CO0/CO1 variables. When that happens, we set a globally unique
+name for that dup (which will be used by the DUP, by the CO0, and by the CO1).
+Just like LAM and VAR val() store the same value, CO0, CO1 and DUPs val() store
+the same value, allowing us to use that value group the family under the same
+id. Then, after a term is printed, we proceed to print all DUPs we discovered.
+Note that this might, then, cause new DUPs to be discovered, so we just print
+them later too, recursively. Just make sure we avoid loops (i.e., a DUP can only be
+discovered once) and we're fine. Remember that we key DUP's by the location of
+the dup'd expression, which is what is stored on CO0/CO1 variables.
+
+# Task 2: print ALO's correctly.
+
+Finally, ALO is, currently, not fully printed. your goal is to also print ALO's
+correctly. to do so, include a new mode in the printer, named 'quoted', which
+prints book terms. remember that book terms are slightly different from runtime
+terms, since lams, vars, dups, co0/co1's, are *quoted*, instead of *linked*.
+
+Book terms (parsed definitions) use de Bruijn indices and are immutable:
+  - VAR: ext = 0         ; val = bru_index
+  - CO_: ext = dup_label ; val = bru_index
+  - LAM: ext = bru_depth ; val = body_location
+  - DUP: ext = dup_label ; val = expr_location
+
+Runtime terms (after ALO allocation) use heap locations:
+  - VAR : ext = 0         ; val = binding_lam_body_location
+  - CO_ : ext = dup_label ; val = binding_dup_expr_location
+  - LAM : ext = 0         ; val = body_location
+  - DUP : ext = 0         ; val = expr_location
+
+your goal is to print ALO's as @{term}, where 'term' is the immutable book term,
+with vars/co0s/co1s printed as their values on the alo_subst list, when
+available. so, for example, if @foo = λx.λy.#Ctr{x,y}, then, applying @foo(1,2)
+would be printed as:
+
+@{λx.λy.#Ctr{x,y}}(1,2)
+
+this would reduce to:
+
+λx.λy.@{#Ctr{x,y}}(1,2)
+
+which would reduce to:
+
+λx.λy.@{#Ctr{1,2}}
+
+(note that, here, the x and y variables are printed as 1 and 2, since these
+substitutions are now available on the alo's subst list)
+
+which would reduce to:
+
+#Ctr{@{1},@{2}}
+
+which would reduce to:
+
+#Ctr{1,2}
+
+your goal is to also implement an ALO printer that works that way.
+
+after that, this new test, named snf_c2_k2:
+
+@c2   = λs. !S0&C=s; λx0.S0₀(S0₁(x0))
+@k2   = λs. !S0&K=s; λx0.S0₀(S0₁(x0))
+@main = @c2(@k2)
+
+should output *exactly*:
+
+λa.λb.A₀!A&K=B₀(C₁);!B&K=a;!C&C=@{&C{λc.A₁,B₁}(&C{A₀,&K{C₀,A₁}})}
+
+# Task 3: modify snf() to have two modes
+
+finally, we'll include a new parameter on snf(), named 'quoted', which, when set
+to true, will substitute λ-bound vars by NAM's, which is the current behavior.
+there will be a change though: when doing so, we return these lambdas with the
+ext field set to the bruijn depth. in other words, we return "book lambdas"
+instead of plain lambdas. this will ensure the pretty printer still prints them
+matching their bound variables (otherwise, we could accidentally have a mismatch
+between lambda name and its bound variable name, given that the bound variable
+will be replaced by a NAM with the bruijn index, yet the new pretty printer
+assigns an unique name to lambdas). pay attention to this detail.
+
+
+when quoted is set to false on snf, it will NOT do that (new behavior). on the
+collapse() function, we will use quoted mode, which preserves the current
+behavior, and prevents tests from breaking. when the user runs a program without
+collapsed mode, though (i.e., 'hvm4 my_program.hvm4'), we will use snf() with
+quoted=false, resulting in a new behavior where programs are shown in their
+interaction calculus form (like the 2 new tests above).
+
+# Notes
+
+after these changes, some tests will break, since we're changing how the printer
+works. don't fix them yet. do NOT ATTEMPT TO FIX THEM. just let me know which
+tests broke, and I'll let you know whether they're still correct or not (i.e.,
+whether the problem is just the syntax changes, or if they broke for real).
+
+that these new tests should NOT use collapsed mode. to configure that, we must
+use a new syntax to define their expected outputs:
+//!output_here
+i.e., the "!" after "//" specifies that it is a non-collapsed test.
+
+be extra careful to understand how variable substitution work before acting.
+remember that the printer must chase substitutions. a substitution occurs when a
+VAR, CO0 or CO1 point to a heap location which has a term with a sub bit set.
+when that's the case, we must replace the var/co0/co1 by the target term, with
+the sub bit cleared. when a VAR, CO0 or CO1 don't point to a heap location with
+a sub bit set, then, they're just normal variables, and should be printed as
+such. this is important when handling the subst list of ALO's. double check if
+the terms in the ALO subst list have a sub bit set and, if so, clear it before
+calling print; otherwise, we might accidentally pass a term with a sub bit set
+to the print fn. this should NEVER happen. add an assert at the beginning of the
+print_at call to ensure this, indeed, doesn't happen. if it happens, that means
+something else is wrong with the code.
+
+now, implement the 3 tasks above. do not run any of the old tests. run the two
+new tests with non-collapsed mode. let me know if the output matches. if you
+find any issue or blocker, do NOT attempt to solve it yourself. just get back to
+me and ask clarification questions.
+
+

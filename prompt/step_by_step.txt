@@ -1,0 +1,40 @@
+On the README.md (HVM4's documentation), we often use a "step by step"
+evaluation notation to teach how this system works. For example:
+
+```
+! f &= λx.(x + 1);
+(f₀(10), f₁(20))
+------------------------------ DUP-LAM
+! b &= (&{$x0, $x1} + 1);
+((λ$x0.b₀)(10), (λ$x1.b₁)(20))
+------------------------------ APP-LAM, APP-LAM
+! b &= (&{10, 20} + 1);
+(b₀, b₁)
+------------------------------ OP2-SUP, DUP-NUM
+! b &= &{(10 + 1), (20 + 1)};
+(b₀, b₁)
+------------------------------ OP2-NUM, OP2-NUM
+! b &= &{11, 21};
+(b₀, b₁)
+------------------------------ DUP-SUP
+(11, 21)
+```
+
+Your goal is to add a new option to this repository, -D, which will perform a
+step by step reduction instead of a single pass reduction. To do so, you must
+update snf to remember the root term and, instead of calling wnf() normally, it
+should, when the global STEP_BY_STEP variable is set, perform a loop where it
+calls wnf() repeatedly, until the interaction count doesn't change. Also we must
+add a global ITRS_LIMIT which, when reached, causes wnf to stop reducting and
+just return. We just set ITRS_LIMIT to current itrs + 1 when calling wnf inside
+snf. We print each intermediate state.
+
+Note that we must also be able to print global dups. For example, in the program
+above, it would probably sometimes print just:
+
+(_₀(10), _₁(20))
+
+Because _₀ and _₁ would be identified as unbound dups. This is wrong. Instead, we
+must update the printer to properly capture 
+
+
