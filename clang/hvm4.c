@@ -224,7 +224,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (CO0), 1 =
 // Data Structures
 // ===============
 
-#include "data/pqueue.c"
+#include "collapse/queue.c"
 
 // Term Constructors
 // =================
