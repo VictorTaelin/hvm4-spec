@@ -1,24 +1,44 @@
 typedef struct {
-  u32 *lam_locs;
-  u32 *lam_names;
-  u32  lam_len;
-  u32  lam_cap;
-  u32 *dup_locs;
-  u32 *dup_names;
-  u32 *dup_labels;
-  u32  dup_len;
-  u32  dup_cap;
-  u32  dup_print;
-  u32  next_lam;
-  u32  next_dup;
-  u8   lam_use_ext;
+  u32 loc;
+  u32 name;
+} LamBind;
+
+typedef struct {
+  u32 loc;
+  u32 name;
+  u32 lab;
+} DupBind;
+
+typedef struct {
+  LamBind *lams;
+  DupBind *dups;
+  u32      lam_len;
+  u32      lam_cap;
+  u32      dup_len;
+  u32      dup_cap;
+  u32      dup_print;
+  u32      next_lam;
+  u32      next_dup;
+  u8       lam_use_ext;
+  u8       quoted;
+  u32      subst;
 } PrintState;
 
-fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintState *st);
+fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st);
 
-fn void print_term_at(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintState *st) {
+fn void print_term_at(FILE *f, Term term, u32 depth, PrintState *st) {
   assert(!term_sub(term));
-  print_term_go(f, term, depth, quoted, subst, st);
+  print_term_go(f, term, depth, st);
+}
+
+fn void print_term_mode(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintState *st) {
+  u8  old_quoted = st->quoted;
+  u32 old_subst  = st->subst;
+  st->quoted = quoted;
+  st->subst  = subst;
+  print_term_at(f, term, depth, st);
+  st->quoted = old_quoted;
+  st->subst  = old_subst;
 }
 
 fn void print_alpha_name(FILE *f, u32 n, char base) {
@@ -51,60 +71,36 @@ fn void print_dup_name(FILE *f, u32 name) {
 }
 
 fn void print_state_init(PrintState *st, u8 lam_use_ext) {
-  st->lam_locs    = NULL;
-  st->lam_names   = NULL;
-  st->lam_len     = 0;
-  st->lam_cap     = 0;
-  st->dup_locs    = NULL;
-  st->dup_names   = NULL;
-  st->dup_labels  = NULL;
-  st->dup_len     = 0;
-  st->dup_cap     = 0;
-  st->dup_print   = 0;
+  memset(st, 0, sizeof(*st));
   st->next_lam    = 1;
   st->next_dup    = 1;
   st->lam_use_ext = lam_use_ext;
 }
 
 fn void print_state_free(PrintState *st) {
-  free(st->lam_locs);
-  free(st->lam_names);
-  free(st->dup_locs);
-  free(st->dup_names);
-  free(st->dup_labels);
+  free(st->lams);
+  free(st->dups);
 }
 
-fn void print_state_grow_lam(PrintState *st) {
-  u32 cap = st->lam_cap == 0 ? 16 : st->lam_cap * 2;
-  st->lam_locs  = realloc(st->lam_locs, sizeof(u32) * cap);
-  st->lam_names = realloc(st->lam_names, sizeof(u32) * cap);
-  if (st->lam_locs == NULL || st->lam_names == NULL) {
+fn void print_state_grow(void **buf, u32 *cap, u32 item_size) {
+  u32 new_cap = *cap == 0 ? 16 : *cap * 2;
+  void *next  = realloc(*buf, item_size * new_cap);
+  if (next == NULL) {
     fprintf(stderr, "print_state: out of memory\n");
     exit(1);
   }
-  st->lam_cap = cap;
+  *buf = next;
+  *cap = new_cap;
 }
 
-fn void print_state_grow_dup(PrintState *st) {
-  u32 cap = st->dup_cap == 0 ? 16 : st->dup_cap * 2;
-  st->dup_locs   = realloc(st->dup_locs, sizeof(u32) * cap);
-  st->dup_names  = realloc(st->dup_names, sizeof(u32) * cap);
-  st->dup_labels = realloc(st->dup_labels, sizeof(u32) * cap);
-  if (st->dup_locs == NULL || st->dup_names == NULL || st->dup_labels == NULL) {
-    fprintf(stderr, "print_state: out of memory\n");
-    exit(1);
-  }
-  st->dup_cap = cap;
-}
-
-fn u32 print_state_get_lam(PrintState *st, u32 loc, u32 hint) {
+fn u32 print_state_lam(PrintState *st, u32 loc, u32 hint) {
   for (u32 i = 0; i < st->lam_len; i++) {
-    if (st->lam_locs[i] == loc) {
-      return st->lam_names[i];
+    if (st->lams[i].loc == loc) {
+      return st->lams[i].name;
     }
   }
   if (st->lam_len == st->lam_cap) {
-    print_state_grow_lam(st);
+    print_state_grow((void **)&st->lams, &st->lam_cap, sizeof(LamBind));
   }
   u32 name = 0;
   if (st->lam_use_ext && hint != 0) {
@@ -112,25 +108,22 @@ fn u32 print_state_get_lam(PrintState *st, u32 loc, u32 hint) {
   } else {
     name = st->next_lam++;
   }
-  st->lam_locs[st->lam_len]  = loc;
-  st->lam_names[st->lam_len] = name;
+  st->lams[st->lam_len] = (LamBind){.loc = loc, .name = name};
   st->lam_len++;
   return name;
 }
 
-fn u32 print_state_get_dup(PrintState *st, u32 loc, u32 lab) {
+fn u32 print_state_dup(PrintState *st, u32 loc, u32 lab) {
   for (u32 i = 0; i < st->dup_len; i++) {
-    if (st->dup_locs[i] == loc) {
-      return st->dup_names[i];
+    if (st->dups[i].loc == loc) {
+      return st->dups[i].name;
     }
   }
   if (st->dup_len == st->dup_cap) {
-    print_state_grow_dup(st);
+    print_state_grow((void **)&st->dups, &st->dup_cap, sizeof(DupBind));
   }
   u32 name = st->next_dup++;
-  st->dup_locs[st->dup_len]   = loc;
-  st->dup_names[st->dup_len]  = name;
-  st->dup_labels[st->dup_len] = lab;
+  st->dups[st->dup_len] = (DupBind){.loc = loc, .name = name, .lab = lab};
   st->dup_len++;
   return name;
 }
@@ -159,7 +152,7 @@ fn void print_mat_name(FILE *f, u32 nam) {
 }
 
 // Prints APP and DRY chains as f(x,y,z)
-fn void print_app(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintState *st) {
+fn void print_app(FILE *f, Term term, u32 depth, PrintState *st) {
   Term spine[256];
   u32  len  = 0;
   Term curr = term;
@@ -170,22 +163,22 @@ fn void print_app(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintStat
   }
   if (term_tag(curr) == LAM) {
     fputc('(', f);
-    print_term_at(f, curr, depth, quoted, subst, st);
+    print_term_at(f, curr, depth, st);
     fputc(')', f);
   } else {
-    print_term_at(f, curr, depth, quoted, subst, st);
+    print_term_at(f, curr, depth, st);
   }
   fputc('(', f);
   for (u32 i = 0; i < len; i++) {
     if (i > 0) {
       fputc(',', f);
     }
-    print_term_at(f, spine[len - 1 - i], depth, quoted, subst, st);
+    print_term_at(f, spine[len - 1 - i], depth, st);
   }
   fputc(')', f);
 }
 
-fn void print_ctr(FILE *f, Term t, u32 d, u8 quoted, u32 subst, PrintState *st) {
+fn void print_ctr(FILE *f, Term t, u32 d, PrintState *st) {
   u32 nam = term_ext(t), loc = term_val(t), ari = term_tag(t) - C00;
   // Nat: count SUCs, print as Nn or Nn+x
   if (nam == NAM_ZER || nam == NAM_SUC) {
@@ -197,7 +190,7 @@ fn void print_ctr(FILE *f, Term t, u32 d, u8 quoted, u32 subst, PrintState *st) 
     fprintf(f, "%un", n);
     if (!(term_tag(t) == C00 && term_ext(t) == NAM_ZER)) {
       fputc('+', f);
-      print_term_at(f, t, d, quoted, subst, st);
+      print_term_at(f, t, d, st);
     }
     return;
   }
@@ -250,16 +243,16 @@ fn void print_ctr(FILE *f, Term t, u32 d, u8 quoted, u32 subst, PrintState *st) 
         if (x != t) {
           fputc(',', f);
         }
-        print_term_at(f, HEAP[term_val(x)], d, quoted, subst, st);
+        print_term_at(f, HEAP[term_val(x)], d, st);
       }
       fputc(']', f);
       return;
     }
     // Improper list: h<>t
     if (nam == NAM_CON) {
-      print_term_at(f, HEAP[loc], d, quoted, subst, st);
+      print_term_at(f, HEAP[loc], d, st);
       fputs("<>", f);
-      print_term_at(f, HEAP[loc + 1], d, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], d, st);
       return;
     }
   }
@@ -271,12 +264,14 @@ fn void print_ctr(FILE *f, Term t, u32 d, u8 quoted, u32 subst, PrintState *st) 
     if (i) {
       fputc(',', f);
     }
-    print_term_at(f, HEAP[loc + i], d, quoted, subst, st);
+    print_term_at(f, HEAP[loc + i], d, st);
   }
   fputc('}', f);
 }
 
-fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, PrintState *st) {
+fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
+  u8  quoted = st->quoted;
+  u32 subst  = st->subst;
   switch (term_tag(term)) {
     case NAM: {
       // Print stuck variable as just the name
@@ -285,7 +280,7 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
     }
     case DRY: {
       // Print stuck application as f(x,y)
-      print_app(f, term, depth, quoted, subst, st);
+      print_app(f, term, depth, st);
       break;
     }
     case VAR: {
@@ -299,9 +294,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
           Term val = HEAP[bind];
           if (term_sub(val)) {
             val = term_unmark(val);
-            print_term_at(f, val, depth, 0, 0, st);
+            print_term_mode(f, val, depth, 0, 0, st);
           } else {
-            print_term_at(f, term_new_var(bind), depth, 0, 0, st);
+            print_term_mode(f, term_new_var(bind), depth, 0, 0, st);
           }
         } else {
           u32 nam = depth > idx ? depth - idx : 0;
@@ -310,9 +305,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       } else {
         u32 loc = term_val(term);
         if (loc != 0 && term_sub(HEAP[loc])) {
-          print_term_at(f, term_unmark(HEAP[loc]), depth, 0, 0, st);
+          print_term_mode(f, term_unmark(HEAP[loc]), depth, 0, 0, st);
         } else {
-          u32 nam = print_state_get_lam(st, loc, 0);
+          u32 nam = print_state_lam(st, loc, 0);
           print_lam_name(f, st, nam);
         }
       }
@@ -352,11 +347,11 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
           Term val = HEAP[bind];
           if (term_sub(val)) {
             val = term_unmark(val);
-            print_term_at(f, val, depth, 0, 0, st);
+            print_term_mode(f, val, depth, 0, 0, st);
           } else {
             u8  tag = term_tag(term);
             u32 lab = term_ext(term);
-            print_term_at(f, term_new(0, tag, lab, bind), depth, 0, 0, st);
+            print_term_mode(f, term_new(0, tag, lab, bind), depth, 0, 0, st);
           }
         } else {
           u32 nam = depth > idx ? depth - idx : 0;
@@ -370,9 +365,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       } else {
         u32 loc = term_val(term);
         if (loc != 0 && term_sub(HEAP[loc])) {
-          print_term_at(f, term_unmark(HEAP[loc]), depth, 0, 0, st);
+          print_term_mode(f, term_unmark(HEAP[loc]), depth, 0, 0, st);
         } else {
-          u32 nam = print_state_get_dup(st, loc, term_ext(term));
+          u32 nam = print_state_dup(st, loc, term_ext(term));
           print_dup_name(f, nam);
           fputs(term_tag(term) == CO0 ? "₀" : "₁", f);
         }
@@ -385,21 +380,21 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       if (quoted) {
         print_alpha_name(f, depth + 1, 'a');
         fputc('.', f);
-        print_term_at(f, HEAP[loc], depth + 1, 1, subst, st);
+        print_term_at(f, HEAP[loc], depth + 1, st);
       } else {
         u32 hint = 0;
         if (st->lam_use_ext) {
           hint = term_ext(term) + 1;
         }
-        u32 nam = print_state_get_lam(st, loc, hint);
+        u32 nam = print_state_lam(st, loc, hint);
         print_lam_name(f, st, nam);
         fputc('.', f);
-        print_term_at(f, HEAP[loc], depth + 1, 0, 0, st);
+        print_term_at(f, HEAP[loc], depth + 1, st);
       }
       break;
     }
     case APP: {
-      print_app(f, term, depth, quoted, subst, st);
+      print_app(f, term, depth, st);
       break;
     }
     case SUP: {
@@ -407,9 +402,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       fputc('&', f);
       print_name(f, term_ext(term));
       fputc('{', f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputc(',', f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc('}', f);
       break;
     }
@@ -421,12 +416,12 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
         fputc('&', f);
         print_name(f, term_ext(term));
         fputc('=', f);
-        print_term_at(f, HEAP[loc + 0], depth, 1, subst, st);
+        print_term_at(f, HEAP[loc + 0], depth, st);
         fputc(';', f);
-        print_term_at(f, HEAP[loc + 1], depth + 1, 1, subst, st);
+        print_term_at(f, HEAP[loc + 1], depth + 1, st);
       } else {
-        print_state_get_dup(st, loc, term_ext(term));
-        print_term_at(f, HEAP[loc + 1], depth, 0, 0, st);
+        print_state_dup(st, loc, term_ext(term));
+        print_term_at(f, HEAP[loc + 1], depth, st);
       }
       break;
     }
@@ -442,7 +437,7 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
           print_mat_name(f, term_ext(cur));
         }
         fputc(':', f);
-        print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+        print_term_at(f, HEAP[loc + 0], depth, st);
         Term next = HEAP[loc + 1];
         if (term_tag(next) == MAT || term_tag(next) == SWI) {
           fputc(';', f);
@@ -454,10 +449,10 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
         // empty default - just close
       } else if (term_tag(cur) == USE) {
         fputc(';', f);
-        print_term_at(f, HEAP[term_val(cur)], depth, quoted, subst, st);
+        print_term_at(f, HEAP[term_val(cur)], depth, st);
       } else {
         fputc(';', f);
-        print_term_at(f, cur, depth, quoted, subst, st);
+        print_term_at(f, cur, depth, st);
       }
       fputc('}', f);
       break;
@@ -465,12 +460,12 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
     case USE: {
       u32 loc = term_val(term);
       fputs("λ{", f);
-      print_term_at(f, HEAP[loc], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc], depth, st);
       fputc('}', f);
       break;
     }
     case C00 ... C16: {
-      print_ctr(f, term, depth, quoted, subst, st);
+      print_ctr(f, term, depth, st);
       break;
     }
     case OP2: {
@@ -481,7 +476,7 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
         "~", "==", "!=", "<", "<=", ">", ">="
       };
       fputc('(', f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputc(' ', f);
       if (opr < 17) {
         fputs(op_syms[opr], f);
@@ -489,29 +484,29 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
         fprintf(f, "?%u", opr);
       }
       fputc(' ', f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(')', f);
       break;
     }
     case DSU: {
       u32 loc = term_val(term);
       fputs("&(", f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs("){", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(',', f);
-      print_term_at(f, HEAP[loc + 2], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 2], depth, st);
       fputc('}', f);
       break;
     }
     case DDU: {
       u32 loc = term_val(term);
       fputs("!(", f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs(")=", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(';', f);
-      print_term_at(f, HEAP[loc + 2], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 2], depth, st);
       break;
     }
     case ALO: {
@@ -520,41 +515,41 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       u32 tm_loc  = (u32)(pair & 0xFFFFFFFF);
       u32 ls_loc  = (u32)(pair >> 32);
       fputs("@{", f);
-      print_term_at(f, HEAP[tm_loc], 0, 1, ls_loc, st);
+      print_term_mode(f, HEAP[tm_loc], 0, 1, ls_loc, st);
       fputc('}', f);
       break;
     }
     case RED: {
       u32 loc = term_val(term);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs(" ~> ", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       break;
     }
     case EQL: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs(" === ", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(')', f);
       break;
     }
     case AND: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs(" .&. ", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(')', f);
       break;
     }
     case OR: {
       u32 loc = term_val(term);
       fputc('(', f);
-      print_term_at(f, HEAP[loc + 0], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 0], depth, st);
       fputs(" .|. ", f);
-      print_term_at(f, HEAP[loc + 1], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       fputc(')', f);
       break;
     }
@@ -566,21 +561,21 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
       u32 locv  = term_val(lamv);
       u32 hintf = st->lam_use_ext ? term_ext(lamf) + 1 : 0;
       u32 hintv = st->lam_use_ext ? term_ext(lamv) + 1 : 0;
-      u32 namf  = print_state_get_lam(st, locf, hintf);
-      u32 namv  = print_state_get_lam(st, locv, hintv);
+      u32 namf  = print_state_lam(st, locf, hintf);
+      u32 namv  = print_state_lam(st, locv, hintv);
       Term body = HEAP[locv];
       fputs("! ", f);
       print_lam_name(f, st, namf);
       fputs(" = λ ", f);
       print_lam_name(f, st, namv);
       fputs(" ; ", f);
-      print_term_at(f, body, depth + 2, quoted, subst, st);
+      print_term_at(f, body, depth + 2, st);
       break;
     }
     case INC: {
       u32 loc = term_val(term);
       fputs("↑", f);
-      print_term_at(f, HEAP[loc], depth, quoted, subst, st);
+      print_term_at(f, HEAP[loc], depth, st);
       break;
     }
   }
@@ -589,9 +584,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, u8 quoted, u32 subst, Print
 fn void print_term_finish(FILE *f, PrintState *st) {
   while (st->dup_print < st->dup_len) {
     u32 idx = st->dup_print++;
-    u32 loc = st->dup_locs[idx];
-    u32 lab = st->dup_labels[idx];
-    u32 nam = st->dup_names[idx];
+    u32 loc = st->dups[idx].loc;
+    u32 lab = st->dups[idx].lab;
+    u32 nam = st->dups[idx].name;
     fputc('!', f);
     print_dup_name(f, nam);
     fputc('&', f);
@@ -601,7 +596,7 @@ fn void print_term_finish(FILE *f, PrintState *st) {
     if (term_sub(val)) {
       val = term_unmark(val);
     }
-    print_term_at(f, val, 0, 0, 0, st);
+    print_term_at(f, val, 0, st);
     fputc(';', f);
   }
 }
@@ -609,7 +604,7 @@ fn void print_term_finish(FILE *f, PrintState *st) {
 fn void print_term_ex(FILE *f, Term term, u8 lam_use_ext) {
   PrintState st;
   print_state_init(&st, lam_use_ext);
-  print_term_at(f, term, 0, 0, 0, &st);
+  print_term_at(f, term, 0, &st);
   print_term_finish(f, &st);
   print_state_free(&st);
 }
