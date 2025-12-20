@@ -143,7 +143,11 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       Term ddu = term_new_ddu(lab_term, term_new(0, BJV, 0, depth + 1), term_new(0, LAM, depth + 2, loc0));
       u64 lam_loc = heap_alloc(1);
       HEAP[lam_loc] = ddu;
-      return term_new(0, LAM, depth + 1, lam_loc);
+      u32 lam_ext = depth + 1;
+      if (uses == 0) {
+        lam_ext |= LAM_ERA_MASK;
+      }
+      return term_new(0, LAM, lam_ext, lam_loc);
     } else {
       if (!cloned && uses > 2) {
         parse_error_affine(nam, uses, 1, NULL);
@@ -159,7 +163,11 @@ fn Term parse_term_lam(PState *s, u32 depth) {
       HEAP[dup_term_loc + 1] = body;
       u64 lam_loc = heap_alloc(1);
       HEAP[lam_loc] = term_new(0, DUP, lab, dup_term_loc);
-      return term_new(0, LAM, depth + 1, lam_loc);
+      u32 lam_ext = depth + 1;
+      if (uses == 0) {
+        lam_ext |= LAM_ERA_MASK;
+      }
+      return term_new(0, LAM, lam_ext, lam_loc);
     }
   }
   // Simple single arg (with comma recursion for cloned/complex args)
@@ -179,7 +187,11 @@ fn Term parse_term_lam(PState *s, u32 depth) {
     body = parse_auto_dup(body, depth + 1, depth + 1, uses, BJV, 0);
   }
   parse_bind_pop();
+  u32 lam_ext = depth + 1;
+  if (uses == 0) {
+    lam_ext |= LAM_ERA_MASK;
+  }
   u64 loc = heap_alloc(1);
   HEAP[loc] = body;
-  return term_new(0, LAM, depth + 1, loc);
+  return term_new(0, LAM, lam_ext, loc);
 }

@@ -4,8 +4,12 @@
 // f
 fn Term wnf_app_lam(Term lam, Term arg) {
   ITRS++;
-  u32  loc  = term_val(lam);
-  Term body = HEAP[loc];
+  u32  loc     = term_val(lam);
+  u32  lam_ext = term_ext(lam);
+  Term body    = HEAP[loc];
+  if (lam_ext & LAM_ERA_MASK) {
+    return body;
+  }
   heap_subst_var(loc, arg);
   return body;
 }
