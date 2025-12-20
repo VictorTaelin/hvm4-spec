@@ -78,6 +78,10 @@ typedef struct {
 #define BJ0 44  // Bj0(n): quoted dup-bound variable (side 0, de Bruijn level)
 #define BJ1 45  // Bj1(n): quoted dup-bound variable (side 1, de Bruijn level)
 
+// LAM Ext Flags
+// =============
+#define LAM_ERA_MASK 0x800000  // binder unused in lambda body
+
 // Stack frame tags (0x40+) - internal to WNF, encode reduction state
 // Note: regular term tags (APP, MAT, USE, DP0, DP1, OP2, DSU, DDU) also used as frames
 // These frames reuse existing heap nodes to avoid allocation

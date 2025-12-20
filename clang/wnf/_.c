@@ -108,7 +108,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             goto enter;
           }
           case LAM: {
-            next = wnf_alo_lam(ls_loc, len, term_val(book));
+            next = wnf_alo_lam(ls_loc, len, term_ext(book), term_val(book));
             goto enter;
           }
           case APP:
