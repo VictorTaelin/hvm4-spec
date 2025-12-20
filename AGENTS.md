@@ -1,11 +1,20 @@
-# CLAUDE.md
+# AGENTS.md
 
-## What This Is
+## Quick Onboarding
 
-HVM4 is a term rewrite system / runtime for the Interaction Calculus.
-- The theoretical spec is in `README.md`.
-- The C implementation is in `clang/`.
-- The C spec is in `clang/README.md`.
+HVM4 is a runtime for the Interaction Calculus (IC), a lambda-calculus extension with
+explicit duplication (DUP) and superposition (SUP). These primitives enable optimal
+sharing for lazy evaluation, even inside lambdas. This repo is the C runtime:
+parse source -> build static book terms -> lazily allocate dynamic heap terms ->
+reduce with WNF/SNF interactions -> print results.
+
+Key terms:
+- static/book term: immutable definition stored in the book (de Bruijn levels).
+- dynamic term: mutable heap term used during evaluation (linked by pointers).
+- WNF: weak normal form (head reduction with interactions).
+- SNF: strong normal form (full reduction).
+- CNF: collapsed normal form (full lambda-calculus readback).
+- interaction: a rewrite rule (APP-LAM, DUP-SUP, etc.).
 
 ## Build and Test
 
@@ -16,80 +25,74 @@ cd clang && clang -O2 -o main main.c
 # Run a file
 ./clang/main test/file.hvm4 -s -C10
 
-Where:
-- `-s` shows performance stats
-- `-C10` collapses and flattens superpositions
-  - Note: use collapse mode it by default
-  - Note: limit it to 10 lines to avoid infinite streams 
-
 # Run all tests
 ./test/_all_.sh
 ```
 
-## Code Architecture
+## Docs Map
 
-### File Organization (CRITICAL)
+- `README.md`: entry point, build/run examples, links.
+- `STYLEGUIDE.md`: authoritative C style rules for `clang/`.
+- `docs/theory/interaction_calculus.md`: IC theory + examples.
+- `docs/hvm4/core.md`: core term AST and grammar.
+- `docs/hvm4/memory.md`: term layout, heap representation, linked/quoted terms.
+- `docs/hvm4/collapser.md`: CNF readback and collapse algorithm.
+- `docs/hvm4/interactions/*.md`: one file per WNF interaction; mirrors the sequent
+  calculus comment in the matching `clang/wnf/<name>.c`.
 
-**The file path IS the function name.** Replace `/` with `_`, drop `.c`:
+## Code Map (C Runtime)
 
-```
-term/tag.c       →  term_tag()
-term/new/lam.c   →  term_new_lam()
-prim/add.c       →  prim_add()
-wnf/app_lam.c    →  wnf_app_lam()
-```
-
-`_.c` represents the directory itself:
-
-```
-snf/_.c          →  snf()
-collapse/_.c     →  collapse()
-parse/term/_.c   →  parse_term()
-```
-
-This is strictly enforced. Read `clang/STYLE.md` before writing any code.
-
-### Key Modules in `clang/`
-
-- `hvm4.c` — root file that `#include`s everything
-- `main.c` — CLI entry point
-- `term/` — term representation (tag, val, ext, constructors)
-- `parse/` — parser (source → AST)
-- `wnf/` — weak normal form evaluator (interaction rules)
-- `snf/` — strong normal form evaluator
-- `prim/` — primitive operations (add, mul, eq, etc.)
-- `collapse/` — superposition extraction
+### Top-Level Entry
+- `clang/hvm4.c`: single translation unit; defines tags/bit layout/globals and
+  includes every module in build order. Start here to understand the whole runtime.
+- `clang/main.c`: CLI entry point and runtime setup.
 
 ### Term Representation
+- `clang/term/new.c`: pack a term word from fields.
+- `clang/term/tag.c`: extract tag.
+- `clang/term/ext.c`: extract ext.
+- `clang/term/val.c`: extract val.
+- `clang/term/arity.c`: arity per tag.
+- `clang/term/clone.c`: duplication helper.
+- `clang/term/sub/get.c`: read SUB bit.
+- `clang/term/sub/set.c`: set/clear SUB bit.
+- `clang/term/new/*.c`: constructors for each tag; `clang/term/new/_.c` allocates
+  heap nodes.
 
-64-bit term pointer: `SUB(1) | TAG(7) | EXT(24) | VAL(32)`
-
-- SUB: is this heap entry a substitution?
-- TAG: term type (APP, LAM, SUP, etc.)
-- EXT: label/name (24-bit, base64-encoded)
-- VAL: heap address or immediate value
+### Parser
+- `clang/parse/*.c`: lexer utilities, binding stack, and definition parsing.
+- `clang/parse/term/*.c`: term parsers; `clang/parse/term/_.c` dispatches.
 
 ### Evaluation
+- `clang/wnf/_.c`: stack-based WNF evaluator and interaction dispatch.
+- `clang/wnf/*.c`: one interaction per file; see matching doc in
+  `docs/hvm4/interactions/`.
+- `clang/snf/_.c`: SNF entry point and heap anchoring.
+- `clang/snf/at.c`: SNF traversal, quoting, and cycle handling.
 
-Stack-based WNF evaluator in `wnf/_.c`.
-Interaction rules are in `wnf/` named by pattern:
-- `app_lam.c` handles `(λx.f a)`
-- `dup_sup.c` handles `! X &L = &R{a,b}`
-- etc.
+### Collapse (CNF Readback)
+- `clang/collapse/step.c`: lift one SUP to the top, without recursing into branches.
+- `clang/collapse/flatten.c`: BFS enumeration of SUP branches; prints quoted SNF.
+- `clang/collapse/inject.c`: inject collapsed branches into templates.
+- `clang/collapse/queue.c`: priority queue for collapse ordering (INC affects priority).
 
-## Test Format
+### Printing and Names
+- `clang/print/term.c`: term pretty-printer (dynamic/static modes).
+- `clang/print/name.c`: alpha name generation.
+- `clang/print/utf8.c`: UTF-8 printing helpers.
+- `clang/nick/*.c`: base64-ish name encoding/decoding utilities.
+- `clang/table/*.c`: global name table (id <-> string) with lookup helpers.
 
-Tests are `.hvm4` files with expected output in trailing `//` comments:
+### Heap and System
+- `clang/heap/alloc.c`: heap allocation helpers.
+- `clang/heap/subst_var.c`: install lam substitutions.
+- `clang/heap/subst_cop.c`: install dup substitutions.
+- `clang/sys/error.c`: error formatting.
+- `clang/sys/file_read.c`: file read utility.
+- `clang/sys/path_join.c`: path joining.
+- `clang/prelude/_.c`: prelude stub (empty).
 
-```
-@main = ((@add 1) 2)
-//3
-```
+## Naming Rule (Critical)
 
-```
-@main = (&L{1,2} + 3)
-//4
-//5
-```
-
-Always run all tests after each change.
+The file path is the function name: replace `/` with `_`, drop `.c`. Example:
+`wnf/app_lam.c` defines `wnf_app_lam()`. `_.c` represents the directory root.
