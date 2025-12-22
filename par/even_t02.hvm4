@@ -1,0 +1,11 @@
+@even = λ{
+  0n: 1n
+  1n+: λ{
+    0n: 0n
+    1n+: λp. @even(p)
+  }
+}
+
+@main =
+  ! N &= 10000000n
+  #Tup{@even(N₀), @even(N₁)}

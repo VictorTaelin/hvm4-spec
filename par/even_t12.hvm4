@@ -1,0 +1,36 @@
+@even = λ{
+  0n: 1n
+  1n+: λ{
+    0n: 0n
+    1n+: λp. @even(p)
+  }
+}
+
+@main =
+  ! N    &= 10000000n
+  ! N0   &= N₀
+  ! N1   &= N₁
+  ! N00  &= N0₀
+  ! N01  &= N0₁
+  ! N10  &= N1₀
+  ! N11  &= N1₁
+  ! N000 &= N00₀
+  ! N001 &= N00₁
+  ! N010 &= N01₀
+  ! N011 &= N01₁
+  ! N100 &= N10₀
+  ! N101 &= N10₁
+  #Tup{
+    #Tup{
+      #Tup{@even(N000₀), @even(N000₁)}
+      #Tup{@even(N001₀), @even(N001₁)}
+    }
+    #Tup{
+      #Tup{@even(N010₀), @even(N010₁)}
+      #Tup{@even(N011₀), @even(N011₁)}
+    }
+    #Tup{
+      #Tup{@even(N100₀), @even(N100₁)}
+      #Tup{@even(N101₀), @even(N101₁)}
+    }
+  }

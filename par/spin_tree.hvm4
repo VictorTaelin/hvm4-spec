@@ -1,0 +1,16 @@
+// Binary recursion to depth 8 (256 leaves), then sequential work per leaf.
+
+@par = 8
+@seq = 500000
+
+@spin = λ{
+  0: 0;
+  λx. @spin(x - 1)
+}
+
+@tree = λ{
+  0: @spin(@seq);
+  λ&x. #P{ @tree(x - 1), @tree(x - 1) }
+}
+
+@main = @tree(@par)
