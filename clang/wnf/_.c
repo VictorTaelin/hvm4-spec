@@ -6,9 +6,9 @@
 // - Apply: once WHNF is reached, pop frames and dispatch the interaction using
 //   the WHNF result. Frames reuse existing heap nodes to avoid allocations.
 __attribute__((hot)) fn Term wnf(Term term) {
-  Term *heap  = HEAP;
-  Term *stack = STACK;
-  u32  s_pos  = S_POS;
+  wnf_stack_init();
+  Term *stack = WNF_STACK;
+  u32  s_pos  = WNF_S_POS;
   u32  base   = s_pos;
   Term next   = term;
   Term whnf;
@@ -23,11 +23,12 @@ __attribute__((hot)) fn Term wnf(Term term) {
     switch (term_tag(next)) {
       case VAR: {
         u32 loc = term_val(next);
-        Term cell = heap[loc];
+        Term cell = heap_take(loc);
         if (term_sub_get(cell)) {
           next = term_sub_set(cell, 0);
           goto enter;
         }
+        heap_set(loc, cell);
         whnf = next;
         goto apply;
       }
@@ -35,7 +36,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
       case DP0:
       case DP1: {
         u32 loc = term_val(next);
-        Term cell = heap[loc];
+        Term cell = heap_take(loc);
         if (term_sub_get(cell)) {
           next = term_sub_set(cell, 0);
           goto enter;
@@ -47,7 +48,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case APP: {
         u32  loc = term_val(next);
-        Term fun = heap[loc];
+        Term fun = heap_take(loc);
         stack[s_pos++] = next;
         next = fun;
         goto enter;
@@ -55,7 +56,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case DUP: {
         u32  loc  = term_val(next);
-        Term body = heap[loc + 1];
+        Term body = heap_take(loc + 1);
         next = body;
         goto enter;
       }
@@ -69,7 +70,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         u32 nam = term_ext(next);
         if (BOOK[nam] != 0) {
           u64 alo_loc = heap_alloc(1);
-          heap[alo_loc] = (u64)BOOK[nam];
+          heap_set(alo_loc, (u64)BOOK[nam]);
           next = term_new(0, ALO, 0, alo_loc);
           goto enter;
         }
@@ -79,11 +80,11 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case ALO: {
         u32  alo_loc = term_val(next);
-        u64  pair    = heap[alo_loc];
+        u64  pair    = heap_get(alo_loc);
         u32  tm_loc  = (u32)(pair & 0xFFFFFFFF);
         u32  ls_loc  = (u32)(pair >> 32);
         u32  len     = term_ext(next);
-        Term book    = heap[tm_loc];
+        Term book    = heap_get(tm_loc);
 
         switch (term_tag(book)) {
           case VAR: {
@@ -149,13 +150,13 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case ANY: {
             next = book;
             goto enter;
-          }
-        }
+  }
+}
       }
 
       case OP2: {
         u32  loc = term_val(next);
-        Term x   = heap[loc + 0];
+        Term x   = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = x;
         goto enter;
@@ -163,7 +164,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case EQL: {
         u32  loc = term_val(next);
-        Term a   = heap[loc + 0];
+        Term a   = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = a;
         goto enter;
@@ -171,7 +172,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case AND: {
         u32  loc = term_val(next);
-        Term a   = heap[loc + 0];
+        Term a   = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = a;
         goto enter;
@@ -179,7 +180,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case OR: {
         u32  loc = term_val(next);
-        Term a   = heap[loc + 0];
+        Term a   = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = a;
         goto enter;
@@ -187,7 +188,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case DSU: {
         u32  loc = term_val(next);
-        Term lab = heap[loc + 0];
+        Term lab = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = lab;
         goto enter;
@@ -195,7 +196,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case DDU: {
         u32  loc = term_val(next);
-        Term lab = heap[loc + 0];
+        Term lab = heap_get(loc + 0);
         stack[s_pos++] = next;
         next = lab;
         goto enter;
@@ -243,7 +244,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case APP: {
           u32  app_loc = term_val(frame);
-          Term arg     = heap[app_loc + 1];
+          Term arg     = heap_get(app_loc + 1);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -286,9 +287,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
             }
             case RED: {
               // ((f ~> g) x): write RED to heap, push F_APP_RED(app_loc), enter g
-              heap[app_loc + 0] = whnf;  // update heap so F_APP_RED can read it
+              heap_set(app_loc + 0, whnf);  // update heap so F_APP_RED can read it
               u32  red_loc = term_val(whnf);
-              Term g       = heap[red_loc + 1];
+              Term g       = heap_get(red_loc + 1);
               stack[s_pos++] = term_new(0, F_APP_RED, 0, app_loc);
               next = g;
               goto enter;
@@ -313,10 +314,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case F_APP_RED: {
           u32  app_loc = term_val(frame);
-          Term red     = heap[app_loc + 0];
+          Term red     = heap_get(app_loc + 0);
           u32  red_loc = term_val(red);
-          Term f       = heap[red_loc + 0];
-          Term arg     = heap[app_loc + 1];
+          Term f       = heap_get(red_loc + 0);
+          Term arg     = heap_get(app_loc + 1);
           Term g       = whnf;
 
           switch (term_tag(g)) {
@@ -343,14 +344,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case MAT:
             case SWI: {
               // ((f ~> mat) x): store mat in RED's g slot, push F_RED_MAT, enter arg
-              heap[red_loc + 1] = g;  // store mat where g was
+              heap_set(red_loc + 1, g);  // store mat where g was
               stack[s_pos++] = term_new(0, F_RED_MAT, 0, app_loc);
               next = arg;
               goto enter;
             }
             case USE: {
               // ((f ~> use) x): store use in RED's g slot, push F_RED_USE, enter arg
-              heap[red_loc + 1] = g;
+              heap_set(red_loc + 1, g);
               stack[s_pos++] = term_new(0, F_RED_USE, 0, app_loc);
               next = arg;
               goto enter;
@@ -404,8 +405,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
               // (mat #n): compare ext(mat) to val(num)
               ITRS++;
               u32  loc = term_val(mat);
-              Term f   = heap[loc + 0];
-              Term g   = heap[loc + 1];
+              Term f   = heap_get(loc + 0);
+              Term g   = heap_get(loc + 1);
               if (term_ext(mat) == term_val(whnf)) {
                 next = f;
               } else {
@@ -416,7 +417,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case RED: {
               // (mat (g ~> h)): drop g, reduce (mat h)
               u32  red_loc = term_val(whnf);
-              Term h = heap[red_loc + 1];
+              Term h = heap_get(red_loc + 1);
               stack[s_pos++] = mat;
               next = h;
               goto enter;
@@ -442,10 +443,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case F_RED_MAT: {
           u32  app_loc = term_val(frame);
-          Term red     = heap[app_loc + 0];
+          Term red     = heap_get(app_loc + 0);
           u32  red_loc = term_val(red);
-          Term f       = heap[red_loc + 0];
-          Term mat     = heap[red_loc + 1];  // mat was stored here
+          Term f       = heap_get(red_loc + 0);
+          Term mat     = heap_get(red_loc + 1);  // mat was stored here
           switch (term_tag(whnf)) {
             case ERA: {
               whnf = wnf_app_red_mat_era();
@@ -478,7 +479,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case RED: {
               // ((f ~> mat) (g ~> h)): drop g, reduce (mat h) in guarded context
               u32  arg_red_loc = term_val(whnf);
-              Term h = heap[arg_red_loc + 1];
+              Term h = heap_get(arg_red_loc + 1);
               stack[s_pos++] = frame;  // keep F_RED_MAT frame
               next = h;
               goto enter;
@@ -512,7 +513,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case RED: {
               // (use (g ~> h)): drop g, reduce (use h)
               u32  red_loc = term_val(whnf);
-              Term h = heap[red_loc + 1];
+              Term h = heap_get(red_loc + 1);
               stack[s_pos++] = use;
               next = h;
               goto enter;
@@ -529,10 +530,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case F_RED_USE: {
           u32  app_loc = term_val(frame);
-          Term red     = heap[app_loc + 0];
+          Term red     = heap_get(app_loc + 0);
           u32  red_loc = term_val(red);
-          Term f       = heap[red_loc + 0];
-          Term use     = heap[red_loc + 1];  // use was stored here
+          Term f       = heap_get(red_loc + 0);
+          Term use     = heap_get(red_loc + 1);  // use was stored here
           switch (term_tag(whnf)) {
             case ERA: {
               whnf = wnf_app_red_use_era();
@@ -549,7 +550,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case RED: {
               // ((f ~> use) (g ~> h)): drop g, reduce (use h) in guarded context
               u32  arg_red_loc = term_val(whnf);
-              Term h = heap[arg_red_loc + 1];
+              Term h = heap_get(arg_red_loc + 1);
               stack[s_pos++] = frame;  // keep F_RED_USE frame
               next = h;
               goto enter;
@@ -623,7 +624,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             }
             default: {
               u64 new_loc   = heap_alloc(1);
-              heap[new_loc] = whnf;
+              heap_set(new_loc, whnf);
               heap_subst_var(loc, term_new(0, side == 0 ? DP1 : DP0, lab, new_loc));
               whnf          = term_new(0, side == 0 ? DP0 : DP1, lab, new_loc);
               continue;
@@ -637,7 +638,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         case OP2: {
           u32  opr = term_ext(frame);
           u32  loc = term_val(frame);
-          Term y   = heap[loc + 1];
+          Term y   = heap_get(loc + 1);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -689,7 +690,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case RED: {
               // (x op (f ~> g)): drop f, reduce (x op g)
               u32  red_loc = term_val(whnf);
-              Term g = heap[red_loc + 1];
+              Term g = heap_get(red_loc + 1);
               stack[s_pos++] = frame;
               next = g;
               goto enter;
@@ -711,7 +712,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case EQL: {
           u32  loc = term_val(frame);
-          Term b   = heap[loc + 1];
+          Term b   = heap_get(loc + 1);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -733,7 +734,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             default: {
               // Store a's WHNF location, push F_EQL_R, enter b
               // We store a in heap[loc+0] for later retrieval
-              heap[loc + 0] = whnf;
+              heap_set(loc + 0, whnf);
               stack[s_pos++] = term_new(0, F_EQL_R, 0, loc);
               next = b;
               goto enter;
@@ -746,7 +747,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case F_EQL_R: {
           u32  loc = term_val(frame);
-          Term a   = heap[loc + 0];  // a's WHNF was stored here
+          Term a   = heap_get(loc + 0);  // a's WHNF was stored here
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -824,8 +825,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case DSU: {
           u32  loc = term_val(frame);
-          Term a   = heap[loc + 1];
-          Term b   = heap[loc + 2];
+          Term a   = heap_get(loc + 1);
+          Term b   = heap_get(loc + 2);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -856,8 +857,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case DDU: {
           u32  loc = term_val(frame);
-          Term val = heap[loc + 1];
-          Term bod = heap[loc + 2];
+          Term val = heap_get(loc + 1);
+          Term bod = heap_get(loc + 2);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -888,7 +889,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case AND: {
           u32  loc = term_val(frame);
-          Term b   = heap[loc + 1];
+          Term b   = heap_get(loc + 1);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -919,7 +920,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
         // -----------------------------------------------------------------------
         case OR: {
           u32  loc = term_val(frame);
-          Term b   = heap[loc + 1];
+          Term b   = heap_get(loc + 1);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -952,6 +953,13 @@ __attribute__((hot)) fn Term wnf(Term term) {
     }
   }
 
-  S_POS = s_pos;
+  WNF_S_POS = s_pos;
   return whnf;
+}
+
+fn Term wnf_at(u32 loc) {
+  Term cur = heap_take(loc);
+  Term res = wnf(cur);
+  heap_set(loc, res);
+  return res;
 }

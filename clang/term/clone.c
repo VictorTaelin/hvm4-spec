@@ -4,7 +4,7 @@ fn Copy term_clone_at(u32 loc, u32 lab) {
 
 fn Copy term_clone(u32 lab, Term val) {
   u64 loc   = heap_alloc(1);
-  HEAP[loc] = val;
+  heap_set(loc, val);
   return term_clone_at(loc, lab);
 }
 
