@@ -3,6 +3,9 @@
 // #(a opr b)
 fn Term wnf_op2_num_num_raw(u32 opr, u32 a, u32 b) {
   ITRS++;
+  if (__builtin_expect(opr == OP_SUB, 1)) {
+    return term_new_num(a - b);
+  }
   u32 result;
   switch (opr) {
     case OP_ADD: result = a + b; break;
