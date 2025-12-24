@@ -1,13 +1,14 @@
 fn u64 heap_alloc(u64 size) {
-  HeapBank *bank = &HEAP_BANKS[wnf_tid()];
-  u64 at = bank->next;
+  u32 tid = wnf_tid();
+  u64 idx = (u64)tid * HEAP_STRIDE;
+  u64 at = HEAP_NEXT[idx];
   u64 next = at + size;
-  if (next > bank->end || next < at) {
-    fprintf(stderr,
-            "Out of heap memory in thread bank %u (need %llu words)\n",
-            wnf_tid(), size);
-    exit(1);
+  if (__builtin_expect(next <= HEAP_END[idx] && next >= at, 1)) {
+    HEAP_NEXT[idx] = next;
+    return at;
   }
-  bank->next = next;
-  return at;
+  fprintf(stderr,
+          "Out of heap memory in thread bank %u (need %llu words)\n",
+          tid, size);
+  exit(1);
 }
