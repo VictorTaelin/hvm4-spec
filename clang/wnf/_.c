@@ -403,13 +403,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case NUM: {
               // (mat #n): compare ext(mat) to val(num)
               ITRS++;
-              u32  loc = term_val(mat);
-              Term f   = heap_read(loc + 0);
-              Term g   = heap_read(loc + 1);
-              if (term_ext(mat) == term_val(whnf)) {
-                next = f;
+              u32 loc = term_val(mat);
+              u32 ext = term_ext(mat);
+              u32 val = term_val(whnf);
+              if (ext == val) {
+                next = heap_read(loc + 0);
               } else {
-                next = term_new_app(g, whnf);
+                Term g = heap_read(loc + 1);
+                next = term_new_app_at(loc, g, whnf);
               }
               goto enter;
             }
@@ -645,6 +646,11 @@ __attribute__((hot)) fn Term wnf(Term term) {
               continue;
             }
             case NUM: {
+              u8 y_tag = term_tag(y);
+              if (y_tag == NUM) {
+                whnf = wnf_op2_num_num_raw(opr, term_val(whnf), term_val(y));
+                continue;
+              }
               // x is NUM, now reduce y: push F_OP2_NUM frame
               stack[s_pos++] = term_new(0, F_OP2_NUM, opr, term_val(whnf));
               next = y;
@@ -671,7 +677,6 @@ __attribute__((hot)) fn Term wnf(Term term) {
         case F_OP2_NUM: {
           u32 opr   = term_ext(frame);
           u32 x_val = term_val(frame);
-          Term x    = term_new_num(x_val);
 
           switch (term_tag(whnf)) {
             case ERA: {
@@ -679,10 +684,11 @@ __attribute__((hot)) fn Term wnf(Term term) {
               continue;
             }
             case NUM: {
-              whnf = wnf_op2_num_num(opr, x, whnf);
+              whnf = wnf_op2_num_num_raw(opr, x_val, term_val(whnf));
               continue;
             }
             case SUP: {
+              Term x = term_new_num(x_val);
               whnf = wnf_op2_num_sup(opr, x, whnf);
               continue;
             }
@@ -695,11 +701,13 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case INC: {
+              Term x = term_new_num(x_val);
               whnf = wnf_op2_inc_y(opr, x, whnf);
               continue;
             }
             default: {
               // Stuck: (x op y) where x is NUM, y is not
+              Term x = term_new_num(x_val);
               whnf = term_new_op2(opr, x, whnf);
               continue;
             }
@@ -958,6 +966,28 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
 fn Term wnf_at(u32 loc) {
   Term cur = heap_peek(loc);
+  switch (term_tag(cur)) {
+    case RED:
+    case NAM:
+    case BJV:
+    case BJ0:
+    case BJ1:
+    case DRY:
+    case ERA:
+    case SUP:
+    case LAM:
+    case NUM:
+    case MAT:
+    case SWI:
+    case USE:
+    case INC:
+    case C00 ... C16: {
+      return cur;
+    }
+    default: {
+      break;
+    }
+  }
   Term res = wnf(cur);
   if (res != cur) {
     heap_set(loc, res);

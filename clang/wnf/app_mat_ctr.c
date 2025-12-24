@@ -7,14 +7,22 @@
 // (m #L{a,b})
 fn Term wnf_app_mat_ctr(Term mat, Term ctr) {
   ITRS++;
-  u32 ari = term_tag(ctr) - C00;
-  if (term_ext(mat) == term_ext(ctr)) {
-    Term res = heap_read(term_val(mat));
-    for (u32 i = 0; i < ari; i++) {
-      res = term_new_app(res, heap_read(term_val(ctr) + i));
-    }
-    return res;
-  } else {
-    return term_new_app(heap_read(term_val(mat) + 1), ctr);
+  u32 mat_ext = term_ext(mat);
+  u32 ctr_ext = term_ext(ctr);
+  u32 mat_loc = term_val(mat);
+  if (mat_ext != ctr_ext) {
+    Term g = heap_read(mat_loc + 1);
+    return term_new_app_at(mat_loc, g, ctr);
   }
+  u32 ari = term_tag(ctr) - C00;
+  Term res = heap_read(mat_loc);
+  if (ari == 0) {
+    return res;
+  }
+  u32 ctr_loc = term_val(ctr);
+  u64 apps = heap_alloc(2 * (u64)ari);
+  for (u32 i = 0; i < ari; i++) {
+    res = term_new_app_at((u32)(apps + 2 * (u64)i), res, heap_read(ctr_loc + i));
+  }
+  return res;
 }
