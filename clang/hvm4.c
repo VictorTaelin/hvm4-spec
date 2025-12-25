@@ -211,10 +211,10 @@ typedef struct __attribute__((aligned(256))) {
 
 static WnfItrsBank WNF_ITRS_BANKS[MAX_THREADS] = {{0}};
 static _Thread_local WnfBank *WNF_BANK = NULL;
-static _Thread_local u64 *WNF_ITRS_PTR = NULL;
+static _Thread_local u64 WNF_ITRS_LOCAL = 0;
 #define WNF_STACK (WNF_BANK->stack)
 #define WNF_S_POS (WNF_BANK->s_pos)
-#define ITRS (*WNF_ITRS_PTR)
+#define ITRS (WNF_ITRS_LOCAL)
 static u32 FRESH = 1;
 
 #include "wnf/tid.c"
@@ -276,6 +276,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (DP0), 1 =
 #include "heap/peek.c"
 #include "heap/take.c"
 #include "heap/set.c"
+#include "heap/write.c"
 #include "heap/recompute.c"
 
 // Data Structures
@@ -403,6 +404,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (DP0), 1 =
 #include "wnf/stack_free_all.c"
 #include "wnf/itrs_total.c"
 #include "wnf/itrs_thread.c"
+#include "wnf/itrs_flush.c"
 #include "wnf/app_era.c"
 #include "wnf/app_nam.c"
 #include "wnf/app_dry.c"

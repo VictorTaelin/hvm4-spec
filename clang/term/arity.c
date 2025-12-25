@@ -1,52 +1,53 @@
+static const u8 TERM_ARITY[TAG_MASK + 1] = {
+  [APP] = 2,
+  [VAR] = 0,
+  [LAM] = 1,
+  [DP0] = 0,
+  [DP1] = 0,
+  [SUP] = 2,
+  [DUP] = 2,
+  [ALO] = 0,
+  [REF] = 0,
+  [NAM] = 0,
+  [DRY] = 2,
+  [ERA] = 0,
+  [MAT] = 2,
+  [C00] = 0,
+  [C01] = 1,
+  [C02] = 2,
+  [C03] = 3,
+  [C04] = 4,
+  [C05] = 5,
+  [C06] = 6,
+  [C07] = 7,
+  [C08] = 8,
+  [C09] = 9,
+  [C10] = 10,
+  [C11] = 11,
+  [C12] = 12,
+  [C13] = 13,
+  [C14] = 14,
+  [C15] = 15,
+  [C16] = 16,
+  [NUM] = 0,
+  [SWI] = 2,
+  [USE] = 1,
+  [OP2] = 2,
+  [DSU] = 3,
+  [DDU] = 3,
+  [RED] = 2,
+  [EQL] = 2,
+  [AND] = 2,
+  [OR] = 2,
+  [UNS] = 1,
+  [ANY] = 0,
+  [INC] = 1,
+  [BJV] = 0,
+  [BJ0] = 0,
+  [BJ1] = 0,
+};
+
 fn u32 term_arity(Term t) {
-  switch (term_tag(t)) {
-    case NAM: {
-      return 0;
-    }
-    case BJV:
-    case BJ0:
-    case BJ1: {
-      return 0;
-    }
-    case LAM: {
-      return 1;
-    }
-    case APP:
-    case SUP:
-    case DUP:
-    case MAT:
-    case SWI:
-    case DRY:
-    case RED: {
-      return 2;
-    }
-    case USE: {
-      return 1;
-    }
-    case NUM: {
-      return 0;
-    }
-    case C00 ... C16: {
-      return term_tag(t) - C00;
-    }
-    case OP2:
-    case EQL:
-    case AND:
-    case OR: {
-      return 2;
-    }
-    case DSU:
-    case DDU: {
-      return 3;
-    }
-    case UNS: {
-      return 1;
-    }
-    case INC: {
-      return 1;
-    }
-    default: {
-      return 0;
-    }
-  }
+  u8 tag = term_tag(t);
+  return TERM_ARITY[tag];
 }

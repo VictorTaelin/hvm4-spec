@@ -9,8 +9,8 @@ fn Term wnf_dup_dry(u32 lab, u32 loc, u8 side, Term dry) {
   u32  d_loc = term_val(dry);
   u64  base  = heap_alloc(6);
   u32  at    = (u32)base;
-  heap_set(at + 0, heap_read(d_loc + 0));
-  heap_set(at + 1, heap_read(d_loc + 1));
+  heap_write(at + 0, heap_read(d_loc + 0));
+  heap_write(at + 1, heap_read(d_loc + 1));
   Copy F     = term_clone_at(at + 0, lab);
   Copy A     = term_clone_at(at + 1, lab);
   Term r0    = term_new_dry_at(at + 2, F.k0, A.k0);

@@ -10,7 +10,7 @@ fn Term wnf_app_sup(Term app, Term sup) {
   Term arg     = heap_read(app_loc + 1);
   Term tm1     = heap_read(sup_loc + 1);
   u64  loc     = heap_alloc(3);
-  heap_set(loc + 2, arg);
+  heap_write(loc + 2, arg);
   Copy D = term_clone_at(loc + 2, lab);
   heap_set(sup_loc + 1, D.k0);
   Term ap0 = term_new(0, APP, 0, sup_loc);

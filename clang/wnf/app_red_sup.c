@@ -12,8 +12,8 @@ fn Term wnf_app_red_sup(Term f, Term sup, Term arg) {
   Term y       = heap_read(sup_loc + 1);
   u64  base    = heap_alloc(12);
   u32  at      = (u32)base;
-  heap_set(at + 0, f);
-  heap_set(at + 1, arg);
+  heap_write(at + 0, f);
+  heap_write(at + 1, arg);
   Copy F       = term_clone_at(at + 0, lab);
   Copy A       = term_clone_at(at + 1, lab);
   Term red0    = term_new_red_at(at + 2, F.k0, x);

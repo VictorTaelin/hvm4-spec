@@ -20,7 +20,7 @@ fn Term wnf_app_red_mat_num_miss(Term f, Term mat, Term num) {
   u64 lam_loc   = heap_alloc(1);
   Term var_p    = term_new(0, VAR, 0, lam_loc);
   Term body     = term_new_app(f, var_p);
-  heap_set(lam_loc, body);
+  heap_write(lam_loc, body);
   Term lam      = term_new(0, LAM, 0, lam_loc);
 
   // (lam ~> m) #k

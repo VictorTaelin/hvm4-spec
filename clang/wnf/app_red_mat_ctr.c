@@ -21,7 +21,7 @@ fn Term wnf_app_red_mat_ctr_match(Term f, Term mat, Term ctr) {
   // Wrap in lambdas from inside out
   Term body = inner;
   for (int32_t i = ctr_ari - 1; i >= 0; i--) {
-    heap_set(lam_locs[i], body);
+    heap_write(lam_locs[i], body);
     body = term_new(0, LAM, 0, lam_locs[i]);
   }
 

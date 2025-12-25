@@ -1,7 +1,7 @@
 // USE: λ{f} - reduce arg and apply
 // fields = [f]
 fn Term term_new_use_at(u32 loc, Term f) {
-  heap_set(loc, f);
+  heap_write(loc, f);
   return term_new(0, USE, 0, loc);
 }
 

@@ -17,9 +17,9 @@ fn Term wnf_app_red_mat_sup(Term f, Term mat, Term sup) {
   Term b       = heap_read(sup_loc + 1);
   u64  base    = heap_alloc(17);
   u32  at      = (u32)base;
-  heap_set(at + 0, f);
-  heap_set(at + 1, h);
-  heap_set(at + 2, m);
+  heap_write(at + 0, f);
+  heap_write(at + 1, h);
+  heap_write(at + 2, m);
   Copy F       = term_clone_at(at + 0, lab);
   Copy H       = term_clone_at(at + 1, lab);
   Copy M       = term_clone_at(at + 2, lab);

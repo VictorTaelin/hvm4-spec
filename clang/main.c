@@ -174,6 +174,8 @@ int main(int argc, char **argv) {
 
   clock_gettime(CLOCK_MONOTONIC, &end);
 
+  wnf_itrs_flush(0);
+
   // Print stats if requested
   u64 total_itrs = wnf_itrs_total();
   if (opts.stats) {

@@ -155,6 +155,7 @@ static void *snf_par_worker(void *arg) {
     }
   }
 
+  wnf_itrs_flush(me);
   return NULL;
 }
 
@@ -203,6 +204,7 @@ fn Term snf_par(Term term, u32 depth, u8 quoted) {
 
   SnfArg arg0 = { .ctx = &ctx, .tid = 0 };
   snf_par_worker(&arg0);
+  wnf_itrs_flush(0);
 
   for (u32 i = 1; i < n; i++) {
     pthread_join(tids[i], NULL);

@@ -14,8 +14,8 @@ fn Term wnf_app_red_use_sup(Term f, Term use, Term sup) {
   Term b       = heap_read(sup_loc + 1);
   u64  base    = heap_alloc(14);
   u32  at      = (u32)base;
-  heap_set(at + 0, f);
-  heap_set(at + 1, g);
+  heap_write(at + 0, f);
+  heap_write(at + 1, g);
   Copy F       = term_clone_at(at + 0, lab);
   Copy G       = term_clone_at(at + 1, lab);
   Term use0    = term_new_use_at(at + 2, G.k0);
