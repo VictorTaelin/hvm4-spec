@@ -211,10 +211,10 @@ typedef struct __attribute__((aligned(256))) {
 
 static WnfItrsBank WNF_ITRS_BANKS[MAX_THREADS] = {{0}};
 static _Thread_local WnfBank *WNF_BANK = NULL;
-static _Thread_local u64 WNF_ITRS_LOCAL = 0;
+static _Thread_local u64 *WNF_ITRS_PTR = NULL;
 #define WNF_STACK (WNF_BANK->stack)
 #define WNF_S_POS (WNF_BANK->s_pos)
-#define ITRS (WNF_ITRS_LOCAL)
+#define ITRS (*WNF_ITRS_PTR)
 static u32 FRESH = 1;
 
 #include "wnf/tid.c"
