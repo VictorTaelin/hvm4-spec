@@ -23,14 +23,14 @@ fn void collapse_flatten(Term term, int limit, int show_itrs, int silent) {
     u8  pri = it.pri;
 
     // Lazy collapse: lift SUPs one step at a time
-    Term t = collapse_step(heap_read(loc));
+    Term t = collapse_step(heap_read(loc), 0);
     heap_set(loc, t);
 
     // INC fast-path: peel chain of INC wrappers, decrementing priority
     while (term_tag(t) == INC) {
       u32 inc_loc = term_val(t);
       loc = inc_loc;
-      t = collapse_step(heap_read(loc));
+      t = collapse_step(heap_read(loc), 0);
       heap_set(loc, t);
       if (pri > 0) pri--;  // decrement priority, clamped at 0
     }
@@ -41,8 +41,7 @@ fn void collapse_flatten(Term term, int limit, int show_itrs, int silent) {
       collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 0});
       collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 1});
     } else if (term_tag(t) != ERA) {
-      // Non-SUP, non-ERA result - normalize and print
-      t = snf(t);
+      // Non-SUP, non-ERA result - normalize, quote, and print
       if (!silent) {
         print_term_quoted(t);
         if (show_itrs) {

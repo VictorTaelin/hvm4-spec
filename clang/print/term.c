@@ -405,13 +405,9 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
       u32 loc = term_val(term);
       fputs("λ", f);
       if (quoted) {
-        u32  level = depth + 1;
-        Term body  = HEAP[loc];
-        heap_subst_var(loc, term_new(0, BJV, 0, level));
-        print_alpha_name(f, level, 'a');
+        print_alpha_name(f, depth + 1, 'a');
         fputc('.', f);
-        print_term_at(f, body, level, st);
-        HEAP[loc] = body;
+        print_term_at(f, HEAP[loc], depth + 1, st);
       } else {
         u32 nam = print_state_lam(st, loc);
         print_lam_name(f, nam);

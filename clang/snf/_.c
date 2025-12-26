@@ -165,7 +165,7 @@ static void *snf_par_worker(void *arg) {
   return NULL;
 }
 
-fn Term snf(Term term) {
+static inline Term snf_par(Term term) {
   wnf_set_tid(0);
 
   u32 root_loc = (u32)heap_alloc(1);
@@ -220,4 +220,8 @@ fn Term snf(Term term) {
   }
 
   return heap_read(root_loc);
+}
+
+fn Term snf(Term term) {
+  return snf_par(term);
 }
