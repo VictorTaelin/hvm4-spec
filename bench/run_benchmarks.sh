@@ -3,6 +3,7 @@ set -u
 
 MAIN=${MAIN:-./clang/main}
 TIMEOUT=${TIMEOUT:-10}
+threads=(1 2 4 8 12)
 
 if [ ! -x "$MAIN" ]; then
   echo "error: $MAIN not found or not executable" >&2
@@ -31,14 +32,14 @@ done
 name_w=$((name_w + 2))
 
 printf "%-*s" "$name_w" "test"
-for t in {1..12}; do
-  printf "%10s" "T$t"
+for t in "${threads[@]}"; do
+  printf "%8s" "T$t"
 done
 echo
 
 for file in "${bench_files[@]}"; do
   printf "%-*s" "$name_w" "$file"
-  for t in {1..12}; do
+  for t in "${threads[@]}"; do
     extra_args=()
     if [ "$(basename "$file")" = "gen_medium.hvm4" ]; then
       extra_args+=("-C1")
@@ -57,7 +58,7 @@ for file in "${bench_files[@]}"; do
         val=${perf_line%% *}
       fi
     fi
-    printf "%10s" "$val"
+    printf "%8s" "$val"
   done
   echo
 done
