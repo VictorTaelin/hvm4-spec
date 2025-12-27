@@ -6,10 +6,10 @@
 // Integrates collapse_step to handle infinite structures without stack overflow.
 
 #ifndef COLL_WS_STEAL_PERIOD
-#define COLL_WS_STEAL_PERIOD 32u
+#define COLL_WS_STEAL_PERIOD 128u
 #endif
 #ifndef COLL_WS_STEAL_BATCH
-#define COLL_WS_STEAL_BATCH 8u
+#define COLL_WS_STEAL_BATCH 32u
 #endif
 #ifndef COLLAPSE_STACK_SIZE
 #define COLLAPSE_STACK_SIZE (64u * 1024u * 1024u)
@@ -36,47 +36,54 @@ static inline void coll_process_loc(CollCtx *C, u32 me, u8 pri, u32 loc, int64_t
       return;
     }
 
-    Term t = collapse_step(heap_take(loc), 0);
-    heap_set(loc, t);
-
-    while (term_tag(t) == INC) {
-      u32 inc_loc = term_val(t);
-      loc = inc_loc;
-      t = collapse_step(heap_take(loc), 0);
+    Term before = heap_read(loc);
+    Term t = collapse_step(before, 0);
+    if (t != before) {
       heap_set(loc, t);
-      if (pri > 0) {
-        pri -= 1;
-      }
     }
 
-    if (term_tag(t) == SUP) {
-      u32 sup_loc = term_val(t);
-      u8 npri = (u8)(pri + 1);
-      coll_ws_push(&C->ws, me, npri, sup_loc + 0);
-      coll_ws_push(&C->ws, me, npri, sup_loc + 1);
-      *pend_local += 2;
-      return;
-    }
-
-    if (term_tag(t) == ERA) {
-      return;
-    }
-
-    u64 prev = atomic_fetch_add_explicit(&C->printed, 1, memory_order_acq_rel);
-    if (prev < C->limit) {
-      if (!C->silent) {
-        print_term_quoted(t);
-        if (C->show_itrs) {
-          printf(" \033[2m#%llu\033[0m", wnf_itrs_total());
+    switch (term_tag(t)) {
+      case INC: {
+        u32 inc_loc = term_val(t);
+        loc = inc_loc;
+        Term prev = heap_read(loc);
+        t = collapse_step(prev, 0);
+        if (t != prev) {
+          heap_set(loc, t);
         }
-        printf("\n");
+        if (pri > 0) {
+          pri -= 1;
+        }
+        continue;
+      }
+      case SUP: {
+        u32 sup_loc = term_val(t);
+        u8  npri = (u8)(pri + 1);
+        u64 task = ((u64)(sup_loc + 1) << 32) | (u64)(sup_loc + 0);
+        coll_ws_push(&C->ws, me, npri, task);
+        *pend_local += 2;
+        return;
+      }
+      case ERA: {
+        return;
+      }
+      default: {
+        u64 prev = atomic_fetch_add_explicit(&C->printed, 1, memory_order_relaxed);
+        if (prev < C->limit) {
+          if (!C->silent) {
+            print_term_quoted(t);
+            if (C->show_itrs) {
+              printf(" \033[2m#%llu\033[0m", wnf_itrs_total());
+            }
+            printf("\n");
+          }
+        }
+        if (prev + 1u >= C->limit) {
+          atomic_store_explicit(&C->stop, 1, memory_order_release);
+        }
+        return;
       }
     }
-
-    if (prev + 1u >= C->limit) {
-      atomic_store_explicit(&C->stop, 1, memory_order_release);
-    }
-    return;
   }
 }
 
@@ -90,6 +97,7 @@ static void *collapse_flatten_worker(void *arg) {
   u32 iter = 0;
   u32 steal_period = COLL_WS_STEAL_PERIOD;
   u32 steal_batch = COLL_WS_STEAL_BATCH;
+  u32 steal_cursor = me + 1;
   int64_t pend_local = 0;
 
   for (;;) {
@@ -97,13 +105,22 @@ static void *collapse_flatten_worker(void *arg) {
       break;
     }
 
-    u8 pri = 0;
-    u32 loc = 0;
-    bool has_local = coll_ws_pop(&C->ws, me, &pri, &loc);
+    u8  pri = 0;
+    u64 task = 0;
+    bool has_local = coll_ws_pop(&C->ws, me, &pri, &task);
     if (has_local) {
-      coll_process_loc(C, me, pri, loc, &pend_local);
-      pend_local -= 1;
-      iter += 1u;
+      u32 loc0 = (u32)task;
+      u32 loc1 = (u32)(task >> 32);
+      if (loc0 != 0) {
+        coll_process_loc(C, me, pri, loc0, &pend_local);
+        pend_local -= 1;
+        iter += 1u;
+      }
+      if (loc1 != 0) {
+        coll_process_loc(C, me, pri, loc1, &pend_local);
+        pend_local -= 1;
+        iter += 1u;
+      }
       if ((iter & (steal_period - 1u)) != 0u) {
         continue;
       }
@@ -112,7 +129,7 @@ static void *collapse_flatten_worker(void *arg) {
     }
 
     if (iter >= steal_period) {
-      u32 got = coll_ws_steal_some(&C->ws, me, steal_batch, has_local);
+      u32 got = coll_ws_steal_some(&C->ws, me, steal_batch, has_local, &steal_cursor);
       iter = 0;
       if (got > 0u) {
         continue;
@@ -120,11 +137,11 @@ static void *collapse_flatten_worker(void *arg) {
     }
 
     if (pend_local != 0) {
-      atomic_fetch_add_explicit(&C->pending, pend_local, memory_order_release);
+      atomic_fetch_add_explicit(&C->pending, pend_local, memory_order_relaxed);
       pend_local = 0;
     }
 
-    if (atomic_load_explicit(&C->pending, memory_order_acquire) == 0) {
+    if (atomic_load_explicit(&C->pending, memory_order_relaxed) == 0) {
       break;
     }
 
@@ -132,7 +149,7 @@ static void *collapse_flatten_worker(void *arg) {
   }
 
   if (pend_local != 0) {
-    atomic_fetch_add_explicit(&C->pending, pend_local, memory_order_release);
+    atomic_fetch_add_explicit(&C->pending, pend_local, memory_order_relaxed);
   }
 
   wnf_itrs_flush(me);
@@ -157,27 +174,40 @@ static inline void collapse_flatten_seq(Term term, int limit, int show_itrs, int
     Term t = collapse_step(heap_read(loc), 0);
     heap_set(loc, t);
 
-    while (term_tag(t) == INC) {
-      u32 inc_loc = term_val(t);
-      loc = inc_loc;
-      t = collapse_step(heap_read(loc), 0);
-      heap_set(loc, t);
-      if (pri > 0) pri--;
-    }
-
-    if (term_tag(t) == SUP) {
-      u32 sup_loc = term_val(t);
-      collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 0});
-      collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 1});
-    } else if (term_tag(t) != ERA) {
-      if (!silent) {
-        print_term_quoted(t);
-        if (show_itrs) {
-          printf(" \033[2m#%llu\033[0m", wnf_itrs_total());
+    for (;;) {
+      switch (term_tag(t)) {
+        case INC: {
+          u32 inc_loc = term_val(t);
+          loc = inc_loc;
+          t = collapse_step(heap_read(loc), 0);
+          heap_set(loc, t);
+          if (pri > 0) {
+            pri -= 1;
+          }
+          continue;
         }
-        printf("\n");
+        case SUP: {
+          u32 sup_loc = term_val(t);
+          collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 0});
+          collapse_queue_push(&pq, (CollapseQueueItem){.pri = (u8)(pri + 1), .loc = sup_loc + 1});
+          break;
+        }
+        case ERA: {
+          break;
+        }
+        default: {
+          if (!silent) {
+            print_term_quoted(t);
+            if (show_itrs) {
+              printf(" \033[2m#%llu\033[0m", wnf_itrs_total());
+            }
+            printf("\n");
+          }
+          count += 1;
+          break;
+        }
       }
-      count++;
+      break;
     }
   }
 
@@ -220,7 +250,7 @@ fn void collapse_flatten(Term term, int limit, int show_itrs, int silent) {
     exit(1);
   }
 
-  coll_ws_push(&C.ws, 0u, 0u, root_loc);
+  coll_ws_push(&C.ws, 0u, 0u, (u64)root_loc);
   atomic_fetch_add_explicit(&C.pending, 1, memory_order_relaxed);
 
   pthread_t tids[MAX_THREADS];
