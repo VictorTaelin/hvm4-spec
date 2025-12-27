@@ -7,9 +7,9 @@ stream of ordinary lambda terms, i.e., collapsed normal form (CNF).
 
 Two insights make this possible:
 - Quoting removes DUPs. When a branch is ready to print, we run
-  `snf(term, quoted=1)`. Linked vars become quoted vars (BJV/BJ0/BJ1). DUP
-  interactions are defined on quoted dup vars, so DUP nodes are cloned away and
-  disappear from the printed term.
+  `collapse_step(term, depth=0)`. Linked vars become quoted vars (BJV/BJ0/BJ1).
+  DUP interactions are defined on quoted dup vars, so DUP nodes are cloned away
+  and disappear from the printed term.
 - Lifting removes SUPs. We lift the first SUP to the top and enumerate its
   branches. Same-label SUPs annihilate pairwise; different-label SUPs commute and
   create a cross product of branches.
@@ -21,7 +21,7 @@ Two insights make this possible:
   its RHS; INC is left in place for the flattener.
 - `collapse_flatten` (clang/collapse/flatten.c): breadth-first traversal with a
   priority queue. SUP increases priority; INC decreases priority. When a branch
-  has no SUP, it prints `snf(term, quoted=1)`.
+  has no SUP, it prints `collapse_step(term, 0)`.
 
 ## Label Behavior (pairwise vs cross product)
 
@@ -54,4 +54,3 @@ Same labels annihilate pairwise:
 - `clang/collapse/step.c`: SUP lifting rules.
 - `clang/collapse/flatten.c`: branch enumeration + SNF quoting for output.
 - `clang/collapse/queue.c`: priority queue used for BFS order.
-- `clang/snf/at.c`: quoted mode for binders and vars.
