@@ -34,14 +34,16 @@ fn Term collapse_step(Term term, u32 depth) {
       u32  level   = depth + 1;
       heap_subst_var(lam_loc, term_new(0, BJV, 0, level));
       Term body_collapsed = collapse_step(body, level);
-      u8   body_tag = term_tag(body_collapsed);
+      u64  body_loc = heap_alloc(1);
+      heap_set(body_loc, body_collapsed);
+      Term lam = term_new(0, LAM, level, body_loc);
+
+      u8 body_tag = term_tag(body_collapsed);
       if (body_tag == ERA) {
         return term_new_era();
       }
 
       if (body_tag != SUP) {
-        heap_set(lam_loc, body_collapsed);
-        Term lam = term_new(0, LAM, level, lam_loc);
         return lam;
       }
 
@@ -50,7 +52,7 @@ fn Term collapse_step(Term term, u32 depth) {
       Term sup_a   = heap_read(sup_loc + 0);
       Term sup_b   = heap_read(sup_loc + 1);
 
-      u64 loc0 = lam_loc;
+      u64 loc0 = heap_alloc(1);
       u64 loc1 = heap_alloc(1);
       heap_set(loc0, sup_a);
       heap_set(loc1, sup_b);
