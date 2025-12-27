@@ -1,45 +1,72 @@
+// data/wspq.c - work-stealing priority queue built on wsq buckets.
+//
+// Context
+// - Used by eval_collapse for parallel CNF enumeration.
+// - Each worker owns a bank of deques, one per priority bracket.
+//
+// Design
+// - Priority "pri" is bucketed by (pri >> WSPQ_PRI_SHIFT).
+// - A per-worker bitmask tracks which buckets are non-empty.
+// - Local pop takes the lowest-index non-empty bucket (best priority).
+// - Steal prefers higher-priority work and can be restricted to shallower buckets.
+//
+// Notes
+// - Tasks are u64 values; priority is an 8-bit hint.
+// - Not a general multi-producer queue: each worker pushes to its own bank.
+// - wsq buffers are fixed size; push spins if a bucket is temporarily full.
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 
+// Number of priority buckets (must be <= 64 for the bitmask).
 #ifndef WSPQ_BRACKETS
 #define WSPQ_BRACKETS 64u
 #endif
 
+// Priority right shift to map pri -> bucket index.
 #ifndef WSPQ_PRI_SHIFT
 #define WSPQ_PRI_SHIFT 0u
 #endif
 
+// Per-bucket deque capacity (log2).
 #ifndef WSPQ_CAP_POW2
 #define WSPQ_CAP_POW2 21u
 #endif
 
+// Number of victim attempts per steal call.
 #ifndef WSPQ_STEAL_ATTEMPTS
 #define WSPQ_STEAL_ATTEMPTS 2u
 #endif
 
+// Per-worker bank of priority deques plus a non-empty bucket mask.
 typedef struct __attribute__((aligned(256))) {
   WsDeque q[WSPQ_BRACKETS];
   _Atomic u64 nonempty;
 } WspqBank;
 
+// Work-stealing priority queue state for all workers.
 typedef struct {
   WspqBank bank[MAX_THREADS];
   u32 n;
 } Wspq;
 
+// Return index of least-significant set bit (undefined for m == 0).
 static inline u32 wspq_lsb64(u64 m) {
   return (u32)__builtin_ctzll(m);
 }
 
+// Mark a bucket as non-empty in the owner's mask.
 static inline void wspq_mask_set(Wspq *ws, u32 tid, u32 b) {
   atomic_fetch_or_explicit(&ws->bank[tid].nonempty, (1ull << b), memory_order_relaxed);
 }
 
+// Clear a bucket in the owner's mask (used after observing it empty).
 static inline void wspq_mask_clear_owner(Wspq *ws, u32 tid, u32 b) {
   atomic_fetch_and_explicit(&ws->bank[tid].nonempty, ~(1ull << b), memory_order_relaxed);
 }
 
+// Map a priority value to a bucket index.
 static inline u8 wspq_pri_bucket(u32 pri) {
   u32 bucket = pri >> WSPQ_PRI_SHIFT;
   if (bucket >= WSPQ_BRACKETS) {
@@ -48,6 +75,7 @@ static inline u8 wspq_pri_bucket(u32 pri) {
   return (u8)bucket;
 }
 
+// Initialize all per-worker bucket queues.
 static inline bool wspq_init(Wspq *ws, u32 nthreads) {
   ws->n = nthreads;
 
@@ -71,6 +99,7 @@ static inline bool wspq_init(Wspq *ws, u32 nthreads) {
   return true;
 }
 
+// Free all per-worker bucket queues.
 static inline void wspq_free(Wspq *ws) {
   for (u32 t = 0; t < ws->n; ++t) {
     for (u32 b = 0; b < WSPQ_BRACKETS; ++b) {
@@ -79,6 +108,7 @@ static inline void wspq_free(Wspq *ws) {
   }
 }
 
+// Push a task into the owner's bucket; spins until the bucket accepts it.
 static inline void wspq_push(Wspq *ws, u32 tid, u8 pri, u64 task) {
   if (task == 0) {
     return;
@@ -91,6 +121,7 @@ static inline void wspq_push(Wspq *ws, u32 tid, u8 pri, u64 task) {
   wspq_mask_set(ws, tid, bucket);
 }
 
+// Pop the best-priority local task; returns false if none are available.
 static inline bool wspq_pop(Wspq *ws, u32 tid, u8 *pri, u64 *task) {
   u64 m = atomic_load_explicit(&ws->bank[tid].nonempty, memory_order_relaxed);
   if (m == 0ull) {
@@ -110,6 +141,7 @@ static inline bool wspq_pop(Wspq *ws, u32 tid, u8 *pri, u64 *task) {
   return false;
 }
 
+// Steal up to max_batch tasks from other workers, favoring higher priority.
 static inline u32 wspq_steal_some(
   Wspq *ws,
   u32     me,

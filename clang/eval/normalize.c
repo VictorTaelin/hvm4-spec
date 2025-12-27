@@ -15,7 +15,7 @@
 
 typedef struct __attribute__((aligned(64))) {
   WsDeque dq;
-  U32Set  seen;
+  Uset  seen;
 } EvalNormalizeWorker;
 
 typedef struct {
@@ -44,7 +44,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
   if (loc == 0) {
     return;
   }
-  if (!u32_set_add(&worker->seen, loc)) {
+  if (!uset_add(&worker->seen, loc)) {
     return;
   }
   bool parallel = ctx->n > 1;
@@ -58,7 +58,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
           eval_normalize_par_enqueue(ctx, worker, EVAL_NORMALIZE_TASK(dup_loc));
           return;
         } else {
-          if (!u32_set_add(&worker->seen, dup_loc)) {
+          if (!uset_add(&worker->seen, dup_loc)) {
             return;
           }
           loc = dup_loc;
@@ -88,7 +88,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
       return;
     }
     if (tag == LAM) {
-      if (!u32_set_add(&worker->seen, tloc)) {
+      if (!uset_add(&worker->seen, tloc)) {
         return;
       }
       loc = tloc;
@@ -96,7 +96,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
     }
     if (tag == DRY) {
       eval_normalize_par_enqueue(ctx, worker, EVAL_NORMALIZE_TASK(tloc + 1));
-      if (!u32_set_add(&worker->seen, tloc)) {
+      if (!uset_add(&worker->seen, tloc)) {
         return;
       }
       loc = tloc;
@@ -105,7 +105,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
     for (u32 i = ari; i > 1; i--) {
       eval_normalize_par_enqueue(ctx, worker, EVAL_NORMALIZE_TASK(tloc + (i - 1)));
     }
-    if (!u32_set_add(&worker->seen, tloc)) {
+    if (!uset_add(&worker->seen, tloc)) {
       return;
     }
     loc = tloc;
@@ -208,7 +208,7 @@ static inline Term eval_normalize_par(Term term) {
       fprintf(stderr, "eval_normalize: queue allocation failed\n");
       exit(1);
     }
-    u32_set_init(&ctx.W[i].seen, EVAL_NORMALIZE_SEEN_INIT);
+    uset_init(&ctx.W[i].seen, EVAL_NORMALIZE_SEEN_INIT);
   }
 
   EvalNormalizeWorker *worker0 = &ctx.W[0];
@@ -237,7 +237,7 @@ static inline Term eval_normalize_par(Term term) {
 
   for (u32 i = 0; i < n; i++) {
     wsq_free(&ctx.W[i].dq);
-    u32_set_free(&ctx.W[i].seen);
+    uset_free(&ctx.W[i].seen);
   }
 
   return heap_read(root_loc);

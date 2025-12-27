@@ -1,17 +1,37 @@
+// data/wsq.c - Chase-Lev work-stealing deque for u64 tasks.
+//
+// Context
+// - Used by parallel evaluators to distribute heap locations across workers.
+// - Single-owner pushes and pops from the bottom; other threads steal from the top.
+//
+// Design
+// - Ring buffer of fixed capacity (power of two) storing u64 tasks.
+// - Atomic top/bottom indices are cache-line padded to limit false sharing.
+// - Owner operations are wait-free except for full/empty checks.
+// - Steals are lock-free and may fail under contention.
+//
+// Notes
+// - Not multi-producer: only the owner thread may push/pop.
+// - Capacity is fixed after init; wsq_push returns 0 when full.
+// - Counters are monotonic; wrap-around is not guarded (practically unreachable).
+
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 
+// Cache-line size used to pad indices and the buffer alignment.
 #ifndef WSQ_L1
 #define WSQ_L1 128
 #endif
 
+// Cache-line padded atomic index used by the deque.
 typedef struct {
   _Atomic size_t v;
   char _pad[WSQ_L1 - sizeof(_Atomic size_t)];
 } WsqIdx;
 
+// Work-stealing deque state (single owner, multi-stealer).
 typedef struct __attribute__((aligned(128))) {
   WsqIdx top;
   WsqIdx bot;
@@ -20,6 +40,7 @@ typedef struct __attribute__((aligned(128))) {
   size_t cap;
 } WsDeque;
 
+// Allocate aligned memory for the ring buffer.
 static inline void *wsq_aligned_alloc(size_t alignment, size_t nbytes) {
   void *ptr = NULL;
   size_t size = ((nbytes + alignment - 1) / alignment) * alignment;
@@ -30,6 +51,7 @@ static inline void *wsq_aligned_alloc(size_t alignment, size_t nbytes) {
   return ptr;
 }
 
+// Initialize a deque with 2^capacity_pow2 slots.
 static inline int wsq_init(WsDeque *q, u32 capacity_pow2) {
   size_t cap = (size_t)1 << capacity_pow2;
   q->buf = (u64 *)wsq_aligned_alloc(WSQ_L1, cap * sizeof(u64));
@@ -43,6 +65,7 @@ static inline int wsq_init(WsDeque *q, u32 capacity_pow2) {
   return 1;
 }
 
+// Release the deque buffer.
 static inline void wsq_free(WsDeque *q) {
   if (q && q->buf) {
     free(q->buf);
@@ -50,6 +73,7 @@ static inline void wsq_free(WsDeque *q) {
   }
 }
 
+// Owner push to the bottom; returns 1 on success, 0 if full.
 static inline int wsq_push(WsDeque *q, u64 x) {
   size_t b = atomic_load_explicit(&q->bot.v, memory_order_relaxed);
   size_t t = atomic_load_explicit(&q->top.v, memory_order_acquire);
@@ -62,6 +86,7 @@ static inline int wsq_push(WsDeque *q, u64 x) {
   return 1;
 }
 
+// Owner pop from the bottom; returns 1 on success, 0 if empty or lost race.
 static inline int wsq_pop(WsDeque *q, u64 *out) {
   size_t b = atomic_load_explicit(&q->bot.v, memory_order_relaxed);
   if (b == 0) {
@@ -98,6 +123,7 @@ static inline int wsq_pop(WsDeque *q, u64 *out) {
   }
 }
 
+// Thief steal from the top; returns 1 on success, 0 if empty or lost race.
 static inline int wsq_steal(WsDeque *q, u64 *out) {
   size_t t = atomic_load_explicit(&q->top.v, memory_order_acquire);
   size_t b = atomic_load_explicit(&q->bot.v, memory_order_acquire);

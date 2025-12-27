@@ -487,7 +487,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (DP0), 1 =
 // Data
 // ====
 
-#include "data/u32_set.c"
+#include "data/uset.c"
 #include "data/wsq.c"
 #include "data/wspq.c"
 
