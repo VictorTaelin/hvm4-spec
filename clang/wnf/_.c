@@ -657,6 +657,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case OP2:
             case DSU:
             case DDU:
+            case DUP:
+            case MOV:
             case C00 ... C16: {
               next = wnf_dup_nod(lab, loc, side, whnf);
               goto enter;
@@ -722,6 +724,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case OP2:
             case DSU:
             case DDU:
+            case DUP:
+            case MOV:
             case C00 ... C16: {
               next = wnf_mov_nod(loc, whnf);
               goto enter;
