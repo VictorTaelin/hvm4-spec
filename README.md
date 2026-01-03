@@ -2,6 +2,8 @@
 
 HVM4 is a high-performance runtime for the [Interaction Calculus](docs/theory/interaction_calculus.md).
 
+**NOTE: you're here before launch. Use at your own risk.**
+
 ## Building and Running
 
 ```bash
