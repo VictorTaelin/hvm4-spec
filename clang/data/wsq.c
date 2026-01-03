@@ -1,3 +1,4 @@
+#include <malloc.h> // Necessario para _aligned_malloc no Windows
 // data/wsq.c - Chase-Lev work-stealing deque for u64 tasks.
 //
 // Context
@@ -42,13 +43,9 @@ typedef struct __attribute__((aligned(128))) {
 
 // Allocate aligned memory for the ring buffer.
 static inline void *wsq_aligned_alloc(size_t alignment, size_t nbytes) {
-  void *ptr = NULL;
+  // VERSAO WINDOWS: Usa _aligned_malloc em vez de posix_memalign
   size_t size = ((nbytes + alignment - 1) / alignment) * alignment;
-  int err = posix_memalign(&ptr, alignment, size);
-  if (err) {
-    return NULL;
-  }
-  return ptr;
+  return _aligned_malloc(size, alignment);
 }
 
 // Initialize a deque with 2^capacity_pow2 slots.
@@ -68,7 +65,8 @@ static inline int wsq_init(WsDeque *q, u32 capacity_pow2) {
 // Release the deque buffer.
 static inline void wsq_free(WsDeque *q) {
   if (q && q->buf) {
-    free(q->buf);
+    // VERSAO WINDOWS: Tem que usar _aligned_free para memoria alocada com _aligned_malloc
+    _aligned_free(q->buf);
     q->buf = NULL;
   }
 }

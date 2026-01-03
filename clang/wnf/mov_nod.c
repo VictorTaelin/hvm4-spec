@@ -14,14 +14,19 @@ fn Term wnf_mov_nod(u32 loc, Term term) {
   u32  t_loc = term_val(term);
   u32  t_ext = term_ext(term);
   u8   t_tag = term_tag(term);
-  u64  base  = heap_alloc(2 * (u64)ari);
+  // Aloca APENAS GOTs (não 2*ari!)
+  u64  base    = heap_alloc((u64)ari);
   u32  got_loc = (u32)base;
-  u32  nod_loc = got_loc + ari;
   for (u32 i = 0; i < ari; i++) {
-    heap_write(got_loc + i, heap_read(t_loc + i));
-    heap_write(nod_loc + i, term_new_got(got_loc + i));
+    // TAKE valor original
+    Term arg = heap_take(t_loc + i);
+    // Armazena no GOT
+    heap_write(got_loc + i, arg);
+    // Reescreve campo do node ORIGINAL
+    heap_write(t_loc + i, term_new_got(got_loc + i));
   }
-  Term res = term_new(0, t_tag, t_ext, nod_loc);
+  // REUTILIZA o node original (t_loc, não nod_loc!)
+  Term res = term_new(0, t_tag, t_ext, t_loc);
   heap_subst_var(loc, res);
   return res;
 }

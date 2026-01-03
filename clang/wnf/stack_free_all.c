@@ -1,4 +1,4 @@
-#include <sys/mman.h>
+#include <stdlib.h>
 
 fn void wnf_stack_free_all(void) {
   u32 threads = thread_get_count();
@@ -7,11 +7,10 @@ fn void wnf_stack_free_all(void) {
     if (!bank->stack) {
       continue;
     }
-    if (bank->stack_mmap) {
-      munmap(bank->stack, bank->stack_bytes);
-    } else {
-      free(bank->stack);
-    }
+    
+    // No Windows (modificado), sempre usamos free
+    free(bank->stack);
+    
     bank->stack       = NULL;
     bank->stack_bytes = 0;
     bank->stack_mmap  = 0;

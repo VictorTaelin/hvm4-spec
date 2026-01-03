@@ -1,3 +1,4 @@
+
 // HVM4 CLI Entry Point
 // ====================
 //
@@ -12,7 +13,7 @@
 //   -T:  Use N threads (e.g. -T4)
 
 #include "hvm4.c"
-
+#include <stdlib.h>
 // CLI
 // ===
 
@@ -129,7 +130,7 @@ int main(int argc, char **argv) {
   }
 
   // Add file to seen list
-  char *abs_path = realpath(opts.file, NULL);
+  char *abs_path = _fullpath(NULL, opts.file, 0);
   if (abs_path) {
     PARSE_SEEN_FILES[PARSE_SEEN_FILES_LEN++] = abs_path;
   }
