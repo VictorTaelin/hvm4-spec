@@ -80,11 +80,6 @@ fn CliOpts parse_opts(int argc, char **argv) {
   return opts;
 }
 
-// Prelude
-// =======
-
-#include "prelude/_.c"
-
 // Main
 // ====
 
@@ -125,17 +120,6 @@ int main(int argc, char **argv) {
   DEBUG = opts.debug;
   SILENT = opts.silent;
   STEPS_ENABLE = opts.step_by_step;
-
-  // Parse prelude
-  PState ps = {
-    .file = "<prelude>",
-    .src  = (char*)PRELUDE,
-    .pos  = 0,
-    .len  = strlen(PRELUDE),
-    .line = 1,
-    .col  = 1
-  };
-  parse_def(&ps);
 
   // Read and parse user file
   char *src = sys_file_read(opts.file);
