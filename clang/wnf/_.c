@@ -639,6 +639,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
               whnf = wnf_dup_lam(lab, loc, side, whnf);
               continue;
             }
+            case MOV: {
+              whnf = wnf_dup_mov(lab, loc, side, whnf);
+              continue;
+            }
+            case GOT: {
+              whnf = wnf_dup_got(lab, loc, side, whnf);
+              continue;
+            }
             case SUP: {
               next = wnf_dup_sup(lab, loc, side, whnf);
               goto enter;

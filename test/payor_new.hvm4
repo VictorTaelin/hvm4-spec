@@ -1,0 +1,16 @@
+@id = λa. a
+@fst = λa. λb. a
+@snd = λa. λb. b
+
+@make = λss. λf.
+  % s = ss
+  f(s, s)
+
+@movdup = λs. λf.
+  !& x = @make(s)
+  f(x(@fst), x(@snd))
+
+@twice = λf. λa. @movdup(f, λf0. λf1. f0(f1(a)))
+
+@main = @twice(@twice, @id)
+//λa.a
