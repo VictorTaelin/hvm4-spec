@@ -287,6 +287,42 @@ This desugars to:
 //12
 ```
 
+### Unscoped Lambdas
+
+Unscoped lambdas allow a variable to be used outside its binder's lexical
+scope. The direct syntax `λ$x.body` is not yet implemented, so we use:
+
+```
+! f = λ x ; body
+```
+
+This declares in `body`:
+- `f` = `λy. λ$x. y` — a function that wraps its argument in an unscoped lambda
+- `x` = `$x` — an unscoped variable usable anywhere
+
+So instead of writing `λ$x.body` directly, you construct it as `f(body)`:
+
+```hvm4
+@main = ! f = λ x ; f(x + 1)(10)
+//11
+```
+
+Here `f(x + 1)` produces `λ$x.(x + 1)`, and applying that to `10` binds
+`x` to `10`, yielding `11`.
+
+Another example using the unscoped variable in a pair:
+
+```hvm4
+@main = ! f = λ v ; #P{f(1, 2), v}
+//#P{1,2}
+```
+
+Here `f(1, 2)` is `f(1)(2)` which produces `λ$v.1` then applies it to `2`,
+binding `v` to `2`. The pair contains `1` and the captured value `2`.
+
+This is useful for continuation-passing or "exporting" a binding out of a
+nested context.
+
 ## Examples
 
 ### Factorial with Peano Naturals
