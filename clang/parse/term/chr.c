@@ -1,13 +1,31 @@
-fn u32 parse_char_lit(PState *s) {
-  parse_advance(s);
-  u32 c;
+fn u32 parse_char_esc(PState *s) {
+  if (parse_peek(s) == 0) {
+    parse_error(s, "character", 0);
+  }
   if (parse_peek(s) == '\\') {
     parse_advance(s);
-    c = (u32)(u8)parse_peek(s);
+    char c = parse_peek(s);
+    if (c == 0) {
+      parse_error(s, "character", 0);
+    }
     parse_advance(s);
-  } else {
-    c = parse_utf8(s);
+    switch (c) {
+      case 'n': return '\n';
+      case 't': return '\t';
+      case 'r': return '\r';
+      case '0': return '\0';
+      case '\\': return '\\';
+      case '\'': return '\'';
+      case '"': return '"';
+      default: return (u32)(u8)c;
+    }
   }
+  return parse_utf8(s);
+}
+
+fn u32 parse_char_lit(PState *s) {
+  parse_advance(s);
+  u32 c = parse_char_esc(s);
   if (parse_peek(s) != '\'') {
     parse_error(s, "'", parse_peek(s));
   }

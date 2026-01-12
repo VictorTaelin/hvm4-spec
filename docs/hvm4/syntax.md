@@ -67,7 +67,8 @@ Examples:
 - `'c'` desugars to `#Chr{#<codepoint>}`.
 
 Escapes:
-- A backslash escapes the next byte verbatim (no `\n`, `\t` decoding).
+- Standard escapes: `\n`, `\t`, `\r`, `\0`, `\\`, `\'`, `\"`.
+- Other backslashes escape the next byte verbatim.
 - Otherwise UTF-8 sequences are decoded into a numeric codepoint.
 
 ### Strings

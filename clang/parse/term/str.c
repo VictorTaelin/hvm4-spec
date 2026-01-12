@@ -1,18 +1,12 @@
 fn Term parse_term(PState *s, u32 depth);
+fn u32  parse_char_esc(PState *s);
 
 fn Term parse_term_str(PState *s, u32 depth) {
   parse_advance(s);
   Term t = term_new_ctr(NAM_NIL, 0, 0);
   u32 cs[4096]; u32 n = 0;
   while (parse_peek(s) != '"') {
-    u32 c;
-    if (parse_peek(s) == '\\') {
-      parse_advance(s);
-      c = (u32)(u8)parse_peek(s);
-      parse_advance(s);
-    } else {
-      c = parse_utf8(s);
-    }
+    u32 c = parse_char_esc(s);
     cs[n++] = c;
   }
   parse_advance(s);
