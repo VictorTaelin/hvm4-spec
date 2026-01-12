@@ -4,7 +4,7 @@ fn Term parse_term_var(PState *s, u32 depth) {
   int lvl;
   u32 lab;
   u32 cloned;
-  parse_bind_lookup(nam, depth, &lvl, &lab, &cloned);
+  parse_bind_lookup(nam, &lvl, &lab, &cloned);
   parse_skip(s);
   int side = parse_match(s, "₀") ? 0 : parse_match(s, "₁") ? 1 : -1;
   // Fork mode: auto-select side for dup variables
@@ -33,7 +33,7 @@ fn Term parse_term_var(PState *s, u32 depth) {
   // If dup-bound variable used without subscript (and not in fork mode),
   // try to find an outer non-dup binding with capacity
   if (lab != 0 && side == -1) {
-    if (parse_bind_lookup_skip_dup(nam, depth, &lvl, &lab, &cloned)) {
+    if (parse_bind_lookup_skip_dup(nam, &lvl, &lab, &cloned)) {
       // Found outer binding with capacity - use it as BJV
       return term_new(0, BJV, 0, (u32)lvl);
     } else {

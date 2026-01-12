@@ -1,25 +1,17 @@
 fn Term parse_term(PState *s, u32 depth);
 
-// Helper: parse DUP term after & is consumed. Expects: [(label)] [=val;] body
-// If val is provided (non-zero loc), uses it; otherwise parses "= val;" from input.
-// For λx&L.F sugar, val_loc points to where VAR(0) should go.
-fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
+// Helper: parse DUP term after & is consumed. Expects: [(label)] = val; body
+fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth) {
   parse_skip(s);
   // Dynamic label: (expr)
   if (parse_peek(s) == '(') {
     parse_consume(s, "(");
     Term lab_term = parse_term(s, depth);
     parse_consume(s, ")");
-    Term val;
-    if (val_loc) {
-      val = HEAP[val_loc];
-      parse_consume(s, ".");
-    } else {
-      parse_consume(s, "=");
-      val = parse_term(s, depth);
-      parse_skip(s);
-      parse_match(s, ";");
-    }
+    parse_consume(s, "=");
+    Term val = parse_term(s, depth);
+    parse_skip(s);
+    parse_match(s, ";");
     parse_skip(s);
     parse_bind_push(nam, depth, 0xFFFFFF, cloned);
     Term body = parse_term(s, depth + 2);
@@ -36,29 +28,22 @@ fn Term parse_dup_body(PState *s, u32 nam, u32 cloned, u32 depth, u64 val_loc) {
     Term lam0  = term_new(0, LAM, depth + 1, loc0);
     return term_new_ddu(lab_term, val, lam0);
   }
-  // Static label (or auto if next is = or .)
+  // Static label (or auto if next is =)
   u32 lab;
-  char c = parse_peek(s);
-  if (c == '=' || c == '.') {
+  if (parse_peek(s) == '=') {
     lab = PARSE_FRESH_LAB++;
   } else {
     lab = parse_name(s);
   }
-  Term val;
   u64 loc = heap_alloc(2);
-  if (val_loc) {
-    HEAP[loc] = HEAP[val_loc];
-    parse_consume(s, ".");
-  } else {
-    parse_consume(s, "=");
-    HEAP[loc] = parse_term(s, depth);
-    parse_skip(s);
-    parse_match(s, ";");
-  }
+  parse_consume(s, "=");
+  HEAP[loc] = parse_term(s, depth);
   parse_skip(s);
-  parse_bind_push(nam, depth, lab, cloned);
+  parse_match(s, ";");
+  parse_skip(s);
+  u32 bid       = parse_bind_push(nam, depth, lab, cloned);
   Term body     = parse_term(s, depth + 1);
-  u32 uses      = parse_bind_get_uses();
+  u32 uses      = parse_bind_get_uses(bid);
   if (!cloned && uses > 2) {
     parse_error_affine(nam, uses, 1, NULL);
   }
@@ -123,10 +108,10 @@ fn Term parse_term_dup(PState *s, u32 depth) {
     Term val = parse_term(s, depth);
     parse_skip(s);
     parse_match(s, ";");
-    parse_bind_push(nam, depth, 0, cloned);
+    u32  bid  = parse_bind_push(nam, depth, 0, cloned);
     u64  loc  = heap_alloc(1);
     Term body = parse_term(s, depth + 1);
-    u32  uses = parse_bind_get_uses();
+    u32  uses = parse_bind_get_uses(bid);
     // Check for affinity violation on non-cloned variables
     if (!cloned && uses > 1) {
       parse_error_affine(nam, uses, 0, "! &");
@@ -149,5 +134,5 @@ fn Term parse_term_dup(PState *s, u32 depth) {
   // Dynamic DUP term: !x&(lab) = val; body  (lab is an expression)
   // Cloned Dynamic DUP term: !&X &(lab) = val; body
   parse_consume(s, "&");
-  return parse_dup_body(s, nam, cloned, depth, 0);
+  return parse_dup_body(s, nam, cloned, depth);
 }

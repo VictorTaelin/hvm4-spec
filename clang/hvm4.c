@@ -254,7 +254,7 @@ typedef struct {
 
 typedef struct {
   u32 name;
-  u32 depth;
+  u32 lvl;
   u32 lab;
   u32 cloned;  // 1 if this is a cloned variable (λ&x or ! &x = v)
   u32 uses;    // Number of times this variable is used
