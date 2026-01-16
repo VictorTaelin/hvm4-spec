@@ -203,12 +203,6 @@ static inline Term eval_normalize_par(Term term) {
   EvalNormalizeCtx ctx;
 
   u32 n = thread_get_count();
-  if (n == 0) {
-    n = 1;
-  }
-  if (n > MAX_THREADS) {
-    n = MAX_THREADS;
-  }
   ctx.n = n;
   atomic_store_explicit(&ctx.pending, 0, memory_order_relaxed);
   for (u32 i = 0; i < n; i++) {

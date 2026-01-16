@@ -164,12 +164,6 @@ static void *eval_collapse_worker(void *arg) {
 
 fn void eval_collapse(Term term, int limit, int show_itrs, int silent) {
   u32 n = thread_get_count();
-  if (n == 0) {
-    n = 1;
-  }
-  if (n > MAX_THREADS) {
-    n = MAX_THREADS;
-  }
   if (limit == 0) {
     return;
   }
