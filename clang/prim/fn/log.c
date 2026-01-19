@@ -7,12 +7,11 @@ fn Term prim_fn_log_go_2(Term *args);
 // ---------------- log
 // %log_go_0([], s)
 fn Term prim_fn_log(Term *args) {
-  u64  loc = heap_alloc(1);
-  Term var = term_new_var(loc);
-  Term acc = term_new_lam_at(loc, var);
-  Term t = term_new_pri(table_find("log_go_0", 8));
-  t = term_new_app(t, acc);
-  t = term_new_app(t, args[0]);
+  u64  loc      = heap_alloc(1);
+  Term var      = term_new_var(loc);
+  Term acc      = term_new_lam_at(loc, var);
+  Term args0[2] = {acc, args[0]};
+  Term t        = term_new_pri(table_find("log_go_0", 8), 2, args0);
   return wnf(t);
 }
 

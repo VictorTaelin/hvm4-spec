@@ -15,15 +15,21 @@ fn Term parse_term_pri(PState *s, u32 depth) {
   }
   parse_consume(s, "(");
 
-  Term f = term_new_pri(id);
+  Term  args_stack[16];
+  Term *args = args_stack;
+  if (arity > 16) {
+    args = malloc(arity * sizeof(Term));
+    if (args == NULL) {
+      sys_error("Memory allocation failed");
+    }
+  }
 
   for (u32 i = 0; i < arity; i++) {
     parse_skip(s);
     if (parse_peek(s) == ')') {
       parse_error(s, "argument", parse_peek(s));
     }
-    Term arg = parse_term(s, depth);
-    f = term_new_app(f, arg);
+    args[i] = parse_term(s, depth);
     parse_skip(s);
     parse_match(s, ",");  // optional comma
   }
@@ -33,5 +39,10 @@ fn Term parse_term_pri(PState *s, u32 depth) {
     parse_error(s, "end of argument list", parse_peek(s));
   }
   parse_consume(s, ")");
-  return f;
+
+  Term prim = term_new_pri(id, arity, args);
+  if (args != args_stack) {
+    free(args);
+  }
+  return prim;
 }

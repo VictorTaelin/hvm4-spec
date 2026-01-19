@@ -345,6 +345,18 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
       } else {
         print_name(f, term_ext(term));
       }
+      u32 ari = term_arity(term);
+      if (ari > 0) {
+        u32 loc = term_val(term);
+        fputc('(', f);
+        for (u32 i = 0; i < ari; i++) {
+          if (i > 0) {
+            fputc(',', f);
+          }
+          print_term_at(f, HEAP[loc + i], depth, st);
+        }
+        fputc(')', f);
+      }
       break;
     }
     case ERA: {

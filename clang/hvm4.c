@@ -430,7 +430,6 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (DP0), 1 =
 #include "wnf/app_lam.c"
 #include "wnf/app_sup.c"
 #include "wnf/app_inc.c"
-#include "wnf/app_pri.c"
 #include "wnf/app_mat_sup.c"
 #include "wnf/app_mat_ctr.c"
 #include "wnf/app_mat_num.c"
@@ -503,6 +502,7 @@ static int    PARSE_FORK_SIDE = -1;      // -1 = off, 0 = left branch (DP0), 1 =
 #include "wnf/or_num.c"
 #include "wnf/or_inc.c"
 #include "wnf/uns.c"
+#include "wnf/pri.c"
 #include "wnf/_.c"
 
 // Data

@@ -82,6 +82,8 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
   return cur;
 }
 
+fn Term wnf_pri(Term pri);
+
 __attribute__((hot)) fn Term wnf(Term term) {
   wnf_stack_init();
   Term *stack = WNF_STACK;
@@ -159,6 +161,11 @@ __attribute__((hot)) fn Term wnf(Term term) {
         goto apply;
       }
 
+      case PRI: {
+        next = wnf_pri(next);
+        goto enter;
+      }
+
       case ALO: {
         u32  alo_loc = term_val(next);
         u64  pair    = heap_read(alo_loc);
@@ -208,6 +215,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case UNS:
           case INC:
           case C00 ... C16:
+          case PRI:
           case OP2:
           case EQL:
           case AND:
@@ -227,7 +235,6 @@ __attribute__((hot)) fn Term wnf(Term term) {
             goto enter;
           }
           case REF:
-          case PRI:
           case ERA:
           case ANY: {
             next = book;
@@ -351,11 +358,6 @@ __attribute__((hot)) fn Term wnf(Term term) {
             case LAM: {
               next = wnf_app_lam(whnf, arg);
               goto enter;
-            }
-            case PRI: {
-              stack[s_pos++] = frame;
-              whnf = wnf_app_pri(whnf, stack, &s_pos, base);
-              continue;
             }
             case SUP: {
               whnf = wnf_app_sup(frame, whnf);
@@ -1061,7 +1063,6 @@ fn Term wnf_at(u32 loc) {
     case BJ1:
     case DRY:
     case ERA:
-    case PRI:
     case SUP:
     case LAM:
     case NUM:
@@ -1106,7 +1107,6 @@ __attribute__((cold, noinline)) fn Term wnf_steps_at(u32 loc) {
     case BJ1:
     case DRY:
     case ERA:
-    case PRI:
     case SUP:
     case LAM:
     case NUM:

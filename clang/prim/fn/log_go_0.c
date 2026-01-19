@@ -54,7 +54,7 @@ fn void log_print(Term acc) {
 }
 
 fn Term prim_fn_log_go_0(Term *args) {
-  Term acc = args[0];
+  Term acc      = args[0];
   Term list_wnf = wnf(args[1]);
 
   switch (term_tag(list_wnf)) {
@@ -68,11 +68,10 @@ fn Term prim_fn_log_go_0(Term *args) {
       // %log_go_0(acc, ↑x)
       // ------------------- log-go-0-inc
       // ↑(%log(acc(x)))
-      u32  inc_loc = term_val(list_wnf);
-      Term inner   = heap_read(inc_loc);
-      Term app     = term_new_app(acc, inner);
-      Term log     = term_new_pri(table_find("log", 3));
-      log = term_new_app(log, app);
+      u32  inc_loc     = term_val(list_wnf);
+      Term inner       = heap_read(inc_loc);
+      Term app         = term_new_app(acc, inner);
+      Term log         = term_new_pri(table_find("log", 3), 1, &app);
       heap_set(inc_loc, log);
       return term_new(0, INC, 0, inc_loc);
     }
@@ -80,16 +79,16 @@ fn Term prim_fn_log_go_0(Term *args) {
       // %log_go_0(acc, &L{x,y})
       // ------------------------ log-go-0-sup
       // &L{%log(acc0(x)), %log(acc1(y))}
-      u32  lab     = term_ext(list_wnf);
-      u32  sup_loc = term_val(list_wnf);
-      Term x       = heap_read(sup_loc + 0);
-      Term y       = heap_read(sup_loc + 1);
-      Copy A       = term_clone(lab, acc);
-      Term app0    = term_new_pri(table_find("log", 3));
-      app0 = term_new_app(app0, term_new_app(A.k0, x));
-      Term app1    = term_new_pri(table_find("log", 3));
-      app1 = term_new_app(app1, term_new_app(A.k1, y));
-      return term_new_sup(lab, app0, app1);
+      u32  lab         = term_ext(list_wnf);
+      u32  sup_loc     = term_val(list_wnf);
+      Term x           = heap_read(sup_loc + 0);
+      Term y           = heap_read(sup_loc + 1);
+      Copy A           = term_clone(lab, acc);
+      Term app0         = term_new_app(A.k0, x);
+      Term log0         = term_new_pri(table_find("log", 3), 1, &app0);
+      Term app1         = term_new_app(A.k1, y);
+      Term log1         = term_new_pri(table_find("log", 3), 1, &app1);
+      return term_new_sup(lab, log0, log1);
     }
     case C00 ... C16: {
       if (term_tag(list_wnf) == C00 && term_ext(list_wnf) == NAM_NIL) {
@@ -103,13 +102,11 @@ fn Term prim_fn_log_go_0(Term *args) {
         // %log_go_0(acc, #Con{h,t})
         // -------------------------- log-go-0-con
         // %log_go_1(acc, h, t)
-        u32  con_loc = term_val(list_wnf);
-        Term head    = heap_read(con_loc + 0);
-        Term tail    = heap_read(con_loc + 1);
-        Term t = term_new_pri(table_find("log_go_1", 8));
-        t = term_new_app(t, acc);
-        t = term_new_app(t, head);
-        t = term_new_app(t, tail);
+        u32  con_loc  = term_val(list_wnf);
+        Term head     = heap_read(con_loc + 0);
+        Term tail     = heap_read(con_loc + 1);
+        Term args0[3] = {acc, head, tail};
+        Term t        = term_new_pri(table_find("log_go_1", 8), 3, args0);
         return wnf(t);
       }
       log_fail("%log expected a string list");

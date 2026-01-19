@@ -1,3 +1,5 @@
+fn u32 prim_arity(u32 id);
+
 static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [APP] = 2,
   [VAR] = 0,
@@ -50,5 +52,8 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
 
 fn u32 term_arity(Term t) {
   u8 tag = term_tag(t);
+  if (tag == PRI) {
+    return prim_arity(term_ext(t));
+  }
   return TERM_ARITY[tag];
 }
