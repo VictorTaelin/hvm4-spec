@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
   free(HEAP);
   free(BOOK);
   free(TABLE);
-  wnf_stack_free_all();
+  wnf_stack_free();
 
   return 0;
 }

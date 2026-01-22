@@ -1,6 +1,6 @@
 #include <sys/mman.h>
 
-fn void wnf_stack_free_all(void) {
+fn void wnf_stack_free(void) {
   u32 threads = thread_get_count();
   for (u32 i = 0; i < threads; i++) {
     WnfBank *bank = &WNF_BANKS[i];

@@ -100,7 +100,7 @@ static inline void cnf_pool_join(CnfPool *pool, _Atomic u32 *pending) {
   if (atomic_load_explicit(pending, memory_order_acquire) == 0) {
     return;
   }
-  u32 me = wnf_tid();
+  u32 me = WNF_TID;
   u32 idle = 0;
   while (atomic_load_explicit(pending, memory_order_acquire) != 0) {
     CnfTask *task = cnf_pool_try_pop(pool, me);
@@ -126,7 +126,7 @@ static inline void cnf_pool_spawn(CnfPool *pool, CnfTask *task) {
   }
   atomic_fetch_add_explicit(task->pending, 1, memory_order_relaxed);
   atomic_fetch_add_explicit(&pool->pending, 1, memory_order_relaxed);
-  u32 tid = wnf_tid();
+  u32 tid = WNF_TID;
   if (wsq_push(&pool->dq[tid], (u64)(uintptr_t)task)) {
     return;
   }
@@ -143,7 +143,7 @@ fn u8 cnf_pool_try_run(void) {
   if (atomic_load_explicit(&pool->pending, memory_order_acquire) == 0) {
     return 0;
   }
-  u32 me = wnf_tid();
+  u32 me = WNF_TID;
   CnfTask *task = cnf_pool_try_pop(pool, me);
   if (!task) {
     return 0;
