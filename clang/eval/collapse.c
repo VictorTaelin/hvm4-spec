@@ -158,7 +158,6 @@ static void *eval_collapse_worker(void *arg) {
     atomic_fetch_add_explicit(&C->pending, pend_local, memory_order_relaxed);
   }
 
-  wnf_itrs_flush(me);
   return NULL;
 }
 

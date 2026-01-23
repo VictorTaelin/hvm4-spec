@@ -53,7 +53,7 @@ static inline void eval_normalize_par_go(EvalNormalizeCtx *ctx, EvalNormalizeWor
     u8 tag = term_tag(term);
     if (tag == DP0 || tag == DP1) {
       u32 dup_loc = term_val(term);
-      if (dup_loc != 0 && !term_sub_get(heap_peek(dup_loc))) {
+      if (dup_loc != 0 && !term_sub_get(heap_read(dup_loc))) {
         if (parallel) {
           eval_normalize_par_enqueue(ctx, worker, EVAL_NORMALIZE_TASK(dup_loc));
           return;
@@ -182,7 +182,6 @@ static void *eval_normalize_par_worker(void *arg) {
     }
   }
 
-  wnf_itrs_flush(me);
   return NULL;
 }
 
@@ -231,7 +230,6 @@ static inline Term eval_normalize_par(Term term) {
 
   EvalNormalizeArg arg0 = { .ctx = &ctx, .tid = 0 };
   eval_normalize_par_worker(&arg0);
-  wnf_itrs_flush(0);
 
   for (u32 i = 1; i < n; i++) {
     pthread_join(tids[i], NULL);

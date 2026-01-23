@@ -1054,7 +1054,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
 }
 
 fn Term wnf_at(u32 loc) {
-  Term cur = heap_peek(loc);
+  Term cur = heap_read(loc);
   switch (term_tag(cur)) {
     case RED:
     case NAM:
@@ -1098,7 +1098,7 @@ __attribute__((cold, noinline)) fn void steps_print_line(str itr) {
 }
 
 __attribute__((cold, noinline)) fn Term wnf_steps_at(u32 loc) {
-  Term cur = heap_peek(loc);
+  Term cur = heap_read(loc);
   switch (term_tag(cur)) {
     case RED:
     case NAM:
