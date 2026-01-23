@@ -25,7 +25,7 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     return parse_term_lst(s, depth);
   } else if (parse_peek(s) == '\'') {
     return parse_term_chr(s);
-  } else if (parse_peek(s) == '"') {
+  } else if (parse_peek(s) == '"' || parse_peek(s) == '`') {
     return parse_term_str(s, depth);
   } else if (isdigit(parse_peek(s))) {
     Term t = parse_term_nat(s, depth);
