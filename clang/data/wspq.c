@@ -40,6 +40,11 @@
 #define WSPQ_STEAL_ATTEMPTS 2u
 #endif
 
+// How often to check for deadlock during push spin
+#ifndef WSPQ_DEADLOCK_CHECK_PERIOD
+#define WSPQ_DEADLOCK_CHECK_PERIOD 256u
+#endif
+
 // Per-worker bank of key deques plus a non-empty bucket mask.
 typedef struct __attribute__((aligned(256))) {
   WsDeque q[WSPQ_BRACKETS];
@@ -109,14 +114,34 @@ static inline void wspq_free(Wspq *ws) {
   }
 }
 
-// Push a task into the owner's bucket; spins until the bucket accepts it.
+// Check if bucket b is full across all worker banks (deadlock condition).
+static inline bool wspq_bucket_full_all(Wspq *ws, u8 b) {
+  for (u32 t = 0; t < ws->n; ++t) {
+    WsDeque *q = &ws->bank[t].q[b];
+    size_t bot = atomic_load_explicit(&q->bot.v, memory_order_relaxed);
+    size_t top = atomic_load_explicit(&q->top.v, memory_order_relaxed);
+    if (bot - top < q->cap) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static inline void wspq_push(Wspq *ws, u32 tid, u8 key, u64 task) {
   if (task == 0) {
     return;
   }
   u8 bucket = wspq_key_bucket(key);
   WsDeque *q = &ws->bank[tid].q[bucket];
+  u32 spins = 1;
   while (!wsq_push(q, task)) {
+    if ((spins % WSPQ_DEADLOCK_CHECK_PERIOD) == 0) {
+      if (wspq_bucket_full_all(ws, bucket)) {
+        fprintf(stderr, "error: wspq deadlock detected (bucket %u full across all workers)\n", bucket);
+        exit(1);
+      }
+    }
+    spins++;
     cpu_relax();
   }
   wspq_mask_set(ws, tid, bucket);
