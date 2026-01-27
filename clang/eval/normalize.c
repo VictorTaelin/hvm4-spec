@@ -46,20 +46,17 @@ static inline void eval_normalize_go(EvalNormalizeCtx *ctx, EvalNormalizeWorker 
       return;
     }
     Term term = __builtin_expect(STEPS_ENABLE, 0) ? wnf_steps_at(loc) : wnf_at(loc);
+    u32 tloc = term_val(term);
     // DP0/DP1 have term_arity == 0, handle separately
-    u8 tag = term_tag(term);
+    u8  tag  = term_tag(term);
     if (tag == DP0 || tag == DP1) {
-      u32 dup_loc = term_val(term);
-      if (dup_loc != 0 && !term_sub_get(heap_read(dup_loc))) {
-        loc = dup_loc;
-        continue;
-      }
+      loc = tloc;
+      continue;
     }
     u32 ari = term_arity(term);
     if (ari == 0) {
       return;
     }
-    u32 tloc = term_val(term);
     for (u32 i = ari; i > 1; i--) {
       eval_normalize_enqueue(ctx, worker, tloc + (i - 1));
     }
