@@ -33,9 +33,7 @@ static inline void eval_normalize_enqueue(EvalNormalizeCtx *ctx, EvalNormalizeWo
   if (loc == 0) {
     return;
   }
-  if (wsq_push(&worker->dq, (u64)loc)) {
-    atomic_fetch_add_explicit(&ctx->pending, 1, memory_order_release);
-  } else {
+  if (!wsq_push(&worker->dq, (u64)loc)) {
     eval_normalize_go(ctx, worker, loc);
   }
 }
@@ -73,23 +71,26 @@ static void *eval_normalize_worker(void *arg) {
 
   wnf_set_tid(me);
 
+  u32 n = ctx->n;
   u32 r = 0x9E3779B9u ^ me;
-
   u32 idle = 0;
+  bool active = true;
+
   for (;;) {
     u64 task;
-
     if (wsq_pop(&worker->dq, &task)) {
       u32 loc = (u32)task;
       eval_normalize_go(ctx, worker, loc);
-      atomic_fetch_sub_explicit(&ctx->pending, 1, memory_order_release);
-      idle = 0;
       continue;
     }
+    if (active) {
+      atomic_fetch_sub_explicit(&ctx->pending, 1, memory_order_release);
+      active = false;
+      idle   = 0;
+    }
 
-    bool stolen = false;
-    u32 n = ctx->n;
-    u32 start = (me + 1 + (r & 7)) % n;
+    u32 stolen = false;
+    u32 start  = (me + 1 + (r & 7)) % n;
     r ^= r << 13;
     r ^= r >> 17;
     r ^= r << 5;
@@ -100,11 +101,11 @@ static void *eval_normalize_worker(void *arg) {
         continue;
       }
       if (wsq_steal(&ctx->W[vic].dq, &task)) {
+        stolen = true;
+        active = true;
+        atomic_fetch_add_explicit(&ctx->pending, 1, memory_order_release);
         u32 loc = (u32)task;
         eval_normalize_go(ctx, worker, loc);
-        atomic_fetch_sub_explicit(&ctx->pending, 1, memory_order_release);
-        stolen = true;
-        idle = 0;
         break;
       }
     }
@@ -147,7 +148,7 @@ fn Term eval_normalize(Term term) {
 
   u32 n = thread_get_count();
   ctx.n = n;
-  atomic_store_explicit(&ctx.pending, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx.pending, n, memory_order_relaxed);
   for (u32 i = 0; i < n; i++) {
     if (!wsq_init(&ctx.W[i].dq, EVAL_NORMALIZE_WS_CAP_POW2)) {
       fprintf(stderr, "eval_normalize: queue allocation failed\n");
